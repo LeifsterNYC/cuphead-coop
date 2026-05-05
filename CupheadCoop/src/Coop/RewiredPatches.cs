@@ -16,6 +16,7 @@ namespace CupheadCoop.Coop
         public static void Apply(Harmony harmony)
         {
             harmony.PatchAll(typeof(RewiredPatches));
+            harmony.PatchAll(typeof(PlayerInputInit_Patch));
         }
 
         private static bool ShouldOverride(Player __instance)

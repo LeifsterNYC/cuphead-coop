@@ -1,10 +1,8 @@
 using System;
 using BepInEx;
-using BepInEx.Logging;
 using CupheadCoop.Coop;
 using CupheadCoop.Net;
 using HarmonyLib;
-using Rewired;
 using UnityEngine;
 
 namespace CupheadCoop
@@ -18,17 +16,12 @@ namespace CupheadCoop
         private Harmony _harmony;
         private CoopHost _host;
         private CoopClient _client;
-
-        // Player 2 Rewired id is discovered lazily because PlayerManager populates its
-        // dictionary only after the game has loaded a scene where players exist.
-        private int _p2DiscoveryThrottle;
-
-        // Cached Rewired.Player 1 reference for client-side local-input capture.
-        private Player _localP1;
+        private CoopOverlay _overlay;
 
         private void Awake()
         {
             ModConfig.Bind(Config);
+            PlayerInputInit_Patch.Log = Logger;
 
             Logger.LogInfo("CupheadCoop " + Version + " loading…");
 
@@ -45,6 +38,8 @@ namespace CupheadCoop
                 Logger.LogError("Harmony patch failure: " + ex);
             }
 
+            _overlay = gameObject.AddComponent<CoopOverlay>();
+
             Logger.LogInfo("Press " + ModConfig.KeyHost.Value + " to host, " + ModConfig.KeyConnect.Value +
                            " to connect to " + ModConfig.RemoteHost.Value + ":" + ModConfig.Port.Value +
                            ", " + ModConfig.KeyDisconnect.Value + " to disconnect.");
@@ -59,8 +54,6 @@ namespace CupheadCoop
 
         private void Update()
         {
-            DiscoverRewiredPlayers();
-
             HandleHotkeys();
 
             if (CoopState.Mode == CoopMode.Client)
@@ -75,40 +68,6 @@ namespace CupheadCoop
             // Edge detection lives in CoopState — snapshot at end of frame so next frame's
             // GetButtonDown/Up postfixes can compute deltas.
             CoopState.AdvanceFrame();
-        }
-
-        private void DiscoverRewiredPlayers()
-        {
-            // Try every ~30 frames until we find player 2. Cheap.
-            if (CoopState.RewiredPlayer2Id >= 0 && _localP1 != null) return;
-            if (++_p2DiscoveryThrottle < 30) return;
-            _p2DiscoveryThrottle = 0;
-
-            try
-            {
-                if (CoopState.RewiredPlayer2Id < 0)
-                {
-                    var p2 = PlayerManager.GetPlayerInput(PlayerId.PlayerTwo);
-                    if (p2 != null)
-                    {
-                        CoopState.RewiredPlayer2Id = p2.id;
-                        Logger.LogInfo("Resolved Rewired Player 2 id = " + p2.id +
-                                       " (name=" + p2.name + ")");
-                    }
-                }
-                if (_localP1 == null)
-                {
-                    _localP1 = PlayerManager.GetPlayerInput(PlayerId.PlayerOne);
-                    if (_localP1 != null)
-                        Logger.LogInfo("Resolved Rewired Player 1 id = " + _localP1.id +
-                                       " (name=" + _localP1.name + ")");
-                }
-            }
-            catch (Exception ex)
-            {
-                // PlayerManager may not have its dictionary populated yet — silent retry.
-                if (ModConfig.Verbose.Value) Logger.LogDebug("Rewired discovery: " + ex.Message);
-            }
         }
 
         private void HandleHotkeys()
@@ -155,19 +114,21 @@ namespace CupheadCoop
             // On the client, the user is the only person at this PC. We map their LOCAL Player 1
             // controls (whatever Rewired binds them to — keyboard or controller) onto the host's
             // Player 2. This is the natural UX: client uses the most familiar controls.
-            if (_localP1 == null) return;
+            var p1 = CoopState.LocalPlayer1;
+            if (p1 == null) return;
 
             uint buttons = 0;
             // Iterate the action ids we care about. CupheadButton enum values 0..27 cover the
-            // gameplay surface; we just shovel them all in.
+            // gameplay surface; we just shovel them all in. (Action ids 0/1 are axes — bits will
+            // be ignored by the host's GetAxis postfix path.)
             for (int actionId = 0; actionId < 28; actionId++)
             {
-                if (_localP1.GetButton(actionId)) buttons |= (1u << actionId);
+                if (p1.GetButton(actionId)) buttons |= (1u << actionId);
             }
 
             CoopState.LocalButtons = buttons;
-            CoopState.LocalAxisX = _localP1.GetAxis(0);
-            CoopState.LocalAxisY = _localP1.GetAxis(1);
+            CoopState.LocalAxisX = p1.GetAxis(0);
+            CoopState.LocalAxisY = p1.GetAxis(1);
         }
     }
 }

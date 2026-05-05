@@ -23,6 +23,8 @@
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net35" Version="1.0.3">
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+    <!-- 0.9.5.2 is the last version with a net35 target framework. Don't bump unless we move
+         the plugin to net46 / netstandard2.0 (Cuphead's older Mono runtime may not load those). -->
     <PackageReference Include="LiteNetLib" Version="0.9.5.2" />
   </ItemGroup>
 

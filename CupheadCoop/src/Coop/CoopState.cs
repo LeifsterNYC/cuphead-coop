@@ -12,9 +12,15 @@ namespace CupheadCoop.Coop
     {
         public static CoopMode Mode = CoopMode.Off;
 
-        // Resolved at runtime by sniffing PlayerManager.GetPlayerInput(PlayerId.PlayerTwo).
-        // -1 means "not yet captured" — patches must no-op until known.
+        // Resolved by Harmony patch on PlayerInput.Init the moment Cuphead binds Rewired.Player
+        // to a PlayerId. -1 means "not yet captured" — patches no-op until known.
+        public static int RewiredPlayer1Id = -1;
         public static int RewiredPlayer2Id = -1;
+
+        // Live Rewired.Player references captured at the same time. Held so the client side can
+        // sample local input without re-querying PlayerManager every frame.
+        public static Rewired.Player LocalPlayer1;
+        public static Rewired.Player LocalPlayer2;
 
         // Buttons currently held, as seen by the simulation. Bit n = CupheadButton with action id n.
         public static uint CurrentButtons;
