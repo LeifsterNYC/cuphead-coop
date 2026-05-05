@@ -108,11 +108,20 @@ namespace CupheadCoop.Net
                 {
                     var w = WelcomePacket.Read(reader);
                     if (!w.Accepted)
+                    {
                         _log.LogError("CoopClient: rejected by host: " + w.Reason);
+                        peer.Disconnect();
+                    }
                     else if (w.Version != Protocol.Version)
-                        _log.LogWarning("CoopClient: protocol version mismatch (host=" + w.Version + " self=" + Protocol.Version + ")");
+                    {
+                        _log.LogError("CoopClient: protocol version mismatch (host=" + w.Version +
+                                      " self=" + Protocol.Version + "). Disconnecting — both PCs must run the same plugin build.");
+                        peer.Disconnect();
+                    }
                     else
+                    {
                         _log.LogInfo("CoopClient: handshake ok (v" + w.Version + ")");
+                    }
                     break;
                 }
                 default:
