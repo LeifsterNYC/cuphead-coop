@@ -1,0 +1,17 @@
+# build artifacts
+**/bin/
+**/obj/
+*.user
+*.suo
+.vs/
+
+# packaged outputs
+dist/
+
+# temp / decompiled scratch
+decompiled/
+tmp/
+
+# editor
+.idea/
+.vscode/
