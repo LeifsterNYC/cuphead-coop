@@ -21,7 +21,6 @@ PORT="47777"
 CONNECT_KEY="cuphead-coop-v0"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DIST_ZIP="${SCRIPT_DIR}/CupheadCoop-v0.1.0.zip"
 BEPINEX_URL="https://github.com/BepInEx/BepInEx/releases/download/v5.4.23.5/BepInEx_macos_universal_5.4.23.5.zip"
 
 TMP="$(mktemp -d)"
@@ -32,9 +31,34 @@ if [[ -z "$HOST_IP" ]]; then
   exit 1
 fi
 
-if [[ ! -f "$DIST_ZIP" ]]; then
-  echo "error: CupheadCoop-v0.1.0.zip not found next to this script:" >&2
-  echo "       expected at: $DIST_ZIP" >&2
+# Locate the plugin payload. Safari on macOS auto-extracts .zip files, so we accept either:
+#   (a) CupheadCoop-v0.1.0.zip sitting next to the script,
+#   (b) an already-extracted CupheadCoop/ folder containing CupheadCoop.dll, OR
+#   (c) the wrapper folder CupheadCoop-v0.1.0/ that Archive Utility sometimes creates.
+PLUGIN_ZIP=""
+PLUGIN_DIR=""
+for try in \
+  "$SCRIPT_DIR/CupheadCoop-v0.1.0.zip" \
+  "$SCRIPT_DIR"/CupheadCoop-v*.zip; do
+  [[ -f "$try" ]] && PLUGIN_ZIP="$try" && break
+done
+if [[ -z "$PLUGIN_ZIP" ]]; then
+  for try in \
+    "$SCRIPT_DIR/CupheadCoop" \
+    "$SCRIPT_DIR/CupheadCoop-v0.1.0/CupheadCoop" \
+    "$SCRIPT_DIR"/CupheadCoop-v*/CupheadCoop; do
+    if [[ -d "$try" && -f "$try/CupheadCoop.dll" ]]; then
+      PLUGIN_DIR="$try"
+      break
+    fi
+  done
+fi
+if [[ -z "$PLUGIN_ZIP" && -z "$PLUGIN_DIR" ]]; then
+  echo "error: couldn't find the plugin payload next to this script." >&2
+  echo "       expected one of:" >&2
+  echo "         $SCRIPT_DIR/CupheadCoop-v0.1.0.zip" >&2
+  echo "         $SCRIPT_DIR/CupheadCoop/ (with CupheadCoop.dll inside)" >&2
+  echo "         $SCRIPT_DIR/CupheadCoop-v0.1.0/CupheadCoop/" >&2
   exit 1
 fi
 
@@ -96,11 +120,17 @@ else
   echo "✓ BepInEx already present"
 fi
 
-# 3. Drop the plugin.
+# 3. Drop the plugin (zip and folder forms both supported).
 mkdir -p "$CUPHEAD_DIR/BepInEx/plugins"
-ditto -x -k "$DIST_ZIP" "$CUPHEAD_DIR/BepInEx/plugins/"
+if [[ -n "$PLUGIN_ZIP" ]]; then
+  ditto -x -k "$PLUGIN_ZIP" "$CUPHEAD_DIR/BepInEx/plugins/"
+  echo "✓ Plugin (from zip): $CUPHEAD_DIR/BepInEx/plugins/CupheadCoop/"
+else
+  rm -rf "$CUPHEAD_DIR/BepInEx/plugins/CupheadCoop"
+  /bin/cp -R "$PLUGIN_DIR" "$CUPHEAD_DIR/BepInEx/plugins/CupheadCoop"
+  echo "✓ Plugin (from folder): $CUPHEAD_DIR/BepInEx/plugins/CupheadCoop/"
+fi
 xattr -dr com.apple.quarantine "$CUPHEAD_DIR/BepInEx/plugins/CupheadCoop" 2>/dev/null || true
-echo "✓ Plugin: $CUPHEAD_DIR/BepInEx/plugins/CupheadCoop/"
 
 # 4. Pre-write the plugin config with the host IP and friendly defaults.
 mkdir -p "$CUPHEAD_DIR/BepInEx/config"
