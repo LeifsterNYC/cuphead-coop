@@ -21,10 +21,10 @@ Already installed on this machine:
 - BepInEx 5.4.23.5 at `F:\SteamLibrary\steamapps\common\Cuphead\BepInEx\`
 - The plugin auto-deploys to `<game>/BepInEx/plugins/CupheadCoop/` when built in Debug mode.
 
-For a second machine (the friend's PC):
-1. Install BepInEx 5.4.23.5 (win_x64) into the Cuphead folder. Drop the contents of the BepInEx zip into `<game>/`.
+For a second (client) machine:
+1. Install BepInEx 5.4.23.5 (win_x64 on Windows, macos_universal on macOS) into the Cuphead folder. On Windows, drop the contents of the BepInEx zip into `<game>/`. On macOS, use `setup/setup-mac.sh`.
 2. Launch Cuphead once so BepInEx generates its `BepInEx/config/` and `BepInEx/plugins/` folders. Quit.
-3. Copy `dist/CupheadCoop-v0.1.0.zip` to the friend's PC. Extract its `CupheadCoop/` folder into `<game>/BepInEx/plugins/`. Final layout:
+3. Copy `dist/CupheadCoop-v0.1.0.zip` to the client. Extract its `CupheadCoop/` folder into `<game>/BepInEx/plugins/`. Final layout:
    ```
    <game>/BepInEx/plugins/CupheadCoop/CupheadCoop.dll
    <game>/BepInEx/plugins/CupheadCoop/LiteNetLib.dll

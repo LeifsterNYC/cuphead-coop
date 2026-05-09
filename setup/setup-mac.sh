@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# CupheadCoop friend-PC installer for native macOS Cuphead.
+# CupheadCoop client installer for native macOS Cuphead.
 #
 # Usage:
-#   ./setup-friend-mac.sh <host-ip-or-zerotier-address> [path-to-Cuphead-folder]
+#   ./setup-mac.sh <host-ip-or-zerotier-address> [path-to-Cuphead-folder]
 #
 # Example:
-#   ./setup-friend-mac.sh 192.168.0.4
-#   ./setup-friend-mac.sh 10.242.74.251 "/Users/me/Library/Application Support/Steam/steamapps/common/Cuphead"
+#   ./setup-mac.sh 192.168.0.4
+#   ./setup-mac.sh 10.242.74.251 "/Users/me/Library/Application Support/Steam/steamapps/common/Cuphead"
 #
 # Pre-reqs:
 #   - Cuphead installed via Steam (native Mac build).
@@ -135,7 +135,7 @@ xattr -dr com.apple.quarantine "$CUPHEAD_DIR/BepInEx/plugins/CupheadCoop" 2>/dev
 # 4. Pre-write the plugin config with the host IP and friendly defaults.
 mkdir -p "$CUPHEAD_DIR/BepInEx/config"
 cat > "$CUPHEAD_DIR/BepInEx/config/leif.cupheadcoop.cfg" <<EOF
-## CupheadCoop config — pre-seeded by setup-friend-mac.sh.
+## CupheadCoop config — pre-seeded by setup-mac.sh.
 
 [Debug]
 ForceP2WalkRight = false
@@ -181,7 +181,8 @@ Last manual step (Steam can't be edited from a script):
 In-game:
   • Start a single-player game.
   • Press F10 to connect to $HOST_IP:$PORT.
-  • Top-left overlay should show "CoopClient: handshake ok".
+  • Top-left overlay should switch to mode=Client; the BepInEx console will
+    log "CoopClient: dialing …" then "CoopClient: handshake ok".
   • Press F11 to disconnect when you're done.
 
 If F10 doesn't fire (some Mac keyboards bind F-keys to media controls),
