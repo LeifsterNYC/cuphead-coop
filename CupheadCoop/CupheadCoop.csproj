@@ -13,11 +13,28 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <CupheadDir>F:\SteamLibrary\steamapps\common\Cuphead</CupheadDir>
-    <ManagedDir>$(CupheadDir)\Cuphead_Data\Managed</ManagedDir>
-    <BepInExCoreDir>$(CupheadDir)\BepInEx\core</BepInExCoreDir>
-    <PluginsDir>$(CupheadDir)\BepInEx\plugins\CupheadCoop</PluginsDir>
+    <!-- Path resolution priority:
+           1. CupheadDir env var or `dotnet build -p:CupheadDir=...` override (highest)
+           2. Auto-detect of common install locations (Windows F:\, Mac native, Mac Whisky)
+         ManagedDir / BepInExCoreDir / PluginsDir derive from CupheadDir but can also be
+         overridden directly. -->
+    <CupheadDir Condition=" '$(CupheadDir)' == '' AND Exists('F:\SteamLibrary\steamapps\common\Cuphead') ">F:\SteamLibrary\steamapps\common\Cuphead</CupheadDir>
+    <CupheadDir Condition=" '$(CupheadDir)' == '' AND Exists('C:\Program Files (x86)\Steam\steamapps\common\Cuphead') ">C:\Program Files (x86)\Steam\steamapps\common\Cuphead</CupheadDir>
+    <CupheadDir Condition=" '$(CupheadDir)' == '' AND Exists('$(HOME)/Library/Application Support/Steam/steamapps/common/Cuphead') ">$(HOME)/Library/Application Support/Steam/steamapps/common/Cuphead</CupheadDir>
+
+    <ManagedDir Condition=" '$(ManagedDir)' == '' AND Exists('$(CupheadDir)\Cuphead_Data\Managed') ">$(CupheadDir)\Cuphead_Data\Managed</ManagedDir>
+    <ManagedDir Condition=" '$(ManagedDir)' == '' AND Exists('$(CupheadDir)/Cuphead.app/Contents/Resources/Data/Managed') ">$(CupheadDir)/Cuphead.app/Contents/Resources/Data/Managed</ManagedDir>
+
+    <BepInExCoreDir Condition=" '$(BepInExCoreDir)' == '' ">$(CupheadDir)/BepInEx/core</BepInExCoreDir>
+    <PluginsDir Condition=" '$(PluginsDir)' == '' ">$(CupheadDir)/BepInEx/plugins/CupheadCoop</PluginsDir>
   </PropertyGroup>
+
+  <Target Name="VerifyGamePaths" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition=" !Exists('$(ManagedDir)/Assembly-CSharp.dll') "
+           Text="Could not locate Cuphead's Assembly-CSharp.dll. Set CupheadDir to your Cuphead install (or set ManagedDir directly). Tried: $(ManagedDir)" />
+    <Error Condition=" !Exists('$(BepInExCoreDir)/BepInEx.dll') "
+           Text="Could not locate BepInEx core. Install BepInEx 5.4.23.5 into the Cuphead folder first (run setup/setup-mac.sh on Mac, or extract BepInEx_win_x64 on Windows). Tried: $(BepInExCoreDir)" />
+  </Target>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net35" Version="1.0.3">

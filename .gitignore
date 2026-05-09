@@ -5,8 +5,10 @@
 *.suo
 .vs/
 
-# packaged outputs
-dist/
+# packaged outputs — keep the shipped artifacts (Mac bundle + Win zip) checked in.
+dist/*
+!dist/CupheadCoop-v0.1.0.zip
+!dist/CupheadCoop-mac-v0.1.0.tar.gz
 
 # temp / decompiled scratch
 decompiled/
