@@ -16,6 +16,9 @@ dist/*
 decompiled/
 tmp/
 
+# Goldberg Steam Emulator clone — separate repo, don't track
+goldberg_emulator/
+
 # editor
 .idea/
 .vscode/
