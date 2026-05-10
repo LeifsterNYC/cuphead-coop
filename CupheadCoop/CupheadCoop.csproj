@@ -46,12 +46,18 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Reference BepInEx 5.4.22 specifically (not whatever's installed on the host machine).
+         Justin's Mac runs 5.4.22 because 5.4.23.5's macOS preloader has the libc.so.6 bug.
+         Building against 5.4.22 produces a DLL that loads on both 5.4.22 (Mac) and 5.4.23.5
+         (Windows) without the "wrong version of BepInEx" warning. The two versions are
+         ABI-compatible for the APIs we use (BaseUnityPlugin, ConfigEntry, ManualLogSource).
+         Vendored copies live under lib/bepinex-5.4.22/. -->
     <Reference Include="BepInEx">
-      <HintPath>$(BepInExCoreDir)\BepInEx.dll</HintPath>
+      <HintPath>$(MSBuildThisFileDirectory)..\lib\bepinex-5.4.22\BepInEx.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="0Harmony">
-      <HintPath>$(BepInExCoreDir)\0Harmony.dll</HintPath>
+      <HintPath>$(MSBuildThisFileDirectory)..\lib\bepinex-5.4.22\0Harmony.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine">
