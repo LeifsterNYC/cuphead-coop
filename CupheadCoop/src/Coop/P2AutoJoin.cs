@@ -43,6 +43,7 @@ namespace CupheadCoop.Coop
         public static void TickIfPending()
         {
             if (!_pending) return;
+            if (!ModConfig.EnableAutoP2Join.Value) { _pending = false; return; }
             _pending = false;
 
             try

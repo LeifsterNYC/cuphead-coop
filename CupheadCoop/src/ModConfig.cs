@@ -31,6 +31,7 @@ namespace CupheadCoop
         public static ConfigEntry<bool> EnablePauseSync;
         public static ConfigEntry<bool> EnableSceneSync;
         public static ConfigEntry<bool> FocusGateInput;
+        public static ConfigEntry<bool> EnableAutoP2Join;
 
         public static void Bind(ConfigFile cfg)
         {
@@ -78,6 +79,8 @@ namespace CupheadCoop
                 "Client auto-LoadScene's to host's active scene. Disable if menu navigation is producing infinite loops or wrong scene loads.");
             FocusGateInput = cfg.Bind("Sync", "FocusGateInput", true,
                 "Suppress all Rewired input reads when this Cuphead window doesn't have focus. Required when running two instances on the same PC for solo testing — without this, both windows read the same keyboard simultaneously and every keypress moves both cups. Harmless to leave on for normal multi-PC play.");
+            EnableAutoP2Join = cfg.Bind("Sync", "EnableAutoP2Join", true,
+                "On both host and client: when a coop session establishes, force-join P2 via reflection on PlayerManager. Required for Justin-style \"keyboard on remote machine\" coop where host has no local controller to do the natural join. Disable if it interferes with single-player or causes weird state in your version of Cuphead.");
         }
     }
 }
