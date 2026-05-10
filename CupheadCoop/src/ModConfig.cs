@@ -21,6 +21,16 @@ namespace CupheadCoop
         public static ConfigEntry<bool> DebugForceP2WalkRight;
         public static ConfigEntry<bool> Verbose;
 
+        // Per-feature kill switches. Default ON; flip OFF to bisect which sync layer is causing
+        // visible problems on the client. The wire format is unchanged — host always sends, client
+        // chooses whether to apply.
+        public static ConfigEntry<bool> EnablePlayerSync;
+        public static ConfigEntry<bool> EnableAnimationSync;
+        public static ConfigEntry<bool> EnableEntitySync;
+        public static ConfigEntry<bool> EnableHpSync;
+        public static ConfigEntry<bool> EnablePauseSync;
+        public static ConfigEntry<bool> EnableSceneSync;
+
         public static void Bind(ConfigFile cfg)
         {
             KeyHost = cfg.Bind("Hotkeys", "Host", KeyCode.F9,
@@ -50,6 +60,21 @@ namespace CupheadCoop
                 "If true, with no active session, forces Player 2's MoveHorizontal axis to +1.0. Used to verify the input intercept works without networking.");
             Verbose = cfg.Bind("Debug", "Verbose", false,
                 "Log per-frame input traffic. Noisy.");
+
+            // Kill switches let the tester flip individual sync layers off without rebuilding,
+            // to bisect which layer is breaking the in-game experience. All default ON.
+            EnablePlayerSync = cfg.Bind("Sync", "EnablePlayerSync", true,
+                "Client overrides local P1/P2 transforms with host-streamed positions. Disable to see whether ScenePuppetry is interfering with Cuphead's own player movement.");
+            EnableAnimationSync = cfg.Bind("Sync", "EnableAnimationSync", true,
+                "Client also calls Animator.Play to match host's animation state. Disable if cup animations look wrong but transforms are fine.");
+            EnableEntitySync = cfg.Bind("Sync", "EnableEntitySync", true,
+                "Client overrides local AbstractLevelEntity transforms (boss, animated set pieces) with host-streamed positions. Disable to verify M6 vs not.");
+            EnableHpSync = cfg.Bind("Sync", "EnableHpSync", true,
+                "Client mirrors host's HP via PlayerStatsManager.Health setter. Disable if the HP UI is glitching.");
+            EnablePauseSync = cfg.Bind("Sync", "EnablePauseSync", true,
+                "Host's pause state freezes the client. Disable to confirm pause-related freezes aren't from us.");
+            EnableSceneSync = cfg.Bind("Sync", "EnableSceneSync", true,
+                "Client auto-LoadScene's to host's active scene. Disable if menu navigation is producing infinite loops or wrong scene loads.");
         }
     }
 }

@@ -119,16 +119,20 @@ namespace CupheadCoop.Coop
         /// </summary>
         public static void ClientApply()
         {
-            if (CoopState.RemoteStateSequence == 0) return; // never received anything yet
+            if (CoopState.RemoteStateSequence == 0) return;
+            if (!ModConfig.EnablePlayerSync.Value) return; // kill switch
+
+            int animHashP1 = ModConfig.EnableAnimationSync.Value ? CoopState.RemoteP1AnimHash : 0;
+            int animHashP2 = ModConfig.EnableAnimationSync.Value ? CoopState.RemoteP2AnimHash : 0;
+            sbyte hpP1 = ModConfig.EnableHpSync.Value ? CoopState.RemoteP1Hp : (sbyte)-1;
+            sbyte hpP2 = ModConfig.EnableHpSync.Value ? CoopState.RemoteP2Hp : (sbyte)-1;
 
             if (CoopState.RemoteP1Present)
                 ApplyTo(global::PlayerId.PlayerOne, CoopState.RemoteP1X, CoopState.RemoteP1Y,
-                        CoopState.RemoteP1Facing, CoopState.RemoteP1AnimHash, CoopState.RemoteP1AnimTime,
-                        CoopState.RemoteP1Hp);
+                        CoopState.RemoteP1Facing, animHashP1, CoopState.RemoteP1AnimTime, hpP1);
             if (CoopState.RemoteP2Present)
                 ApplyTo(global::PlayerId.PlayerTwo, CoopState.RemoteP2X, CoopState.RemoteP2Y,
-                        CoopState.RemoteP2Facing, CoopState.RemoteP2AnimHash, CoopState.RemoteP2AnimTime,
-                        CoopState.RemoteP2Hp);
+                        CoopState.RemoteP2Facing, animHashP2, CoopState.RemoteP2AnimTime, hpP2);
         }
 
         private static Vector2? SafeGetPlayerSnapshot(global::PlayerId id, out sbyte facing,

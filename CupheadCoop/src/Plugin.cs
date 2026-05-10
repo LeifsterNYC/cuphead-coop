@@ -11,7 +11,7 @@ namespace CupheadCoop
     public class Plugin : BaseUnityPlugin
     {
         public const string GUID = "leif.cupheadcoop";
-        public const string Version = "0.7.0";
+        public const string Version = "0.7.1";
 
         private Harmony _harmony;
         private CoopHost _host;
@@ -103,13 +103,15 @@ namespace CupheadCoop
             else if (CoopState.Mode == CoopMode.Client)
             {
                 // Scene sync FIRST — if we need to load a different scene, do it before
-                // touching anything else this frame (the other applies would target objects
-                // that may be unloaded a moment from now).
-                SceneSync.ApplyFromHost(CoopState.RemoteSceneName);
+                // touching anything else this frame.
+                if (ModConfig.EnableSceneSync.Value)
+                    SceneSync.ApplyFromHost(CoopState.RemoteSceneName);
                 EntitySync.Tick(Time.unscaledDeltaTime);
                 ScenePuppetry.ClientApply();
-                EntitySync.ApplyToClient(CoopState.RemoteEntities, CoopState.RemoteEntityCount);
-                PauseSync.ApplyFromHost(CoopState.RemoteIsPaused);
+                if (ModConfig.EnableEntitySync.Value)
+                    EntitySync.ApplyToClient(CoopState.RemoteEntities, CoopState.RemoteEntityCount);
+                if (ModConfig.EnablePauseSync.Value)
+                    PauseSync.ApplyFromHost(CoopState.RemoteIsPaused);
             }
 
             // Edge detection lives in CoopState — snapshot at end of frame so next frame's
