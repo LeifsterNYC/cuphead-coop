@@ -1,0 +1,14 @@
+# Enforce LF line endings for shell scripts so macOS / Linux bash doesn't choke
+# on the carriage returns that Windows git autocrlf would otherwise inject.
+*.sh         text eol=lf
+*.bash       text eol=lf
+
+# Other text files: let git auto-detect.
+*            text=auto
+
+# Binary artifacts — don't touch.
+*.dll        binary
+*.zip        binary
+*.tar.gz     binary
+*.png        binary
+*.jpg        binary
