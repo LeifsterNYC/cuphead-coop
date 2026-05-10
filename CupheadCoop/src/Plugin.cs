@@ -25,6 +25,11 @@ namespace CupheadCoop
             ScenePuppetry.Log = Logger;
             LogTap.Wire();
 
+            // Keep the simulation, network polling, and snapshot pump running when Cuphead
+            // loses focus — otherwise alt-tabbing to a terminal kills the host's Update loop
+            // and state snapshots stop until you click back into the game.
+            Application.runInBackground = true;
+
             Logger.LogInfo("CupheadCoop " + Version + " loading…");
 
             _harmony = new Harmony(GUID);

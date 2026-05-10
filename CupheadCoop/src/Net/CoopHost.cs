@@ -105,12 +105,16 @@ namespace CupheadCoop.Net
 
         public void OnConnectionRequest(ConnectionRequest request)
         {
+            _log.LogInfo("CoopHost: connection request from " + request.RemoteEndPoint);
             if (_client != null)
             {
+                _log.LogWarning("CoopHost: rejecting (already have a client at " + _client.EndPoint + ")");
                 request.Reject(Encode("server full"));
                 return;
             }
-            request.AcceptIfKey(ModConfig.ConnectKey.Value);
+            var peer = request.AcceptIfKey(ModConfig.ConnectKey.Value);
+            if (peer == null)
+                _log.LogWarning("CoopHost: rejected by AcceptIfKey (key mismatch?). Remote=" + request.RemoteEndPoint);
         }
 
         public void OnPeerConnected(NetPeer peer)
@@ -138,6 +142,12 @@ namespace CupheadCoop.Net
             _log.LogWarning("CoopHost: socket error from " + endPoint + ": " + socketError);
         }
 
+        public void OnNetworkReceiveUnconnected(System.Net.IPEndPoint remoteEndPoint, NetPacketReader reader, UnconnectedMessageType messageType)
+        {
+            _log.LogInfo("CoopHost: unconnected packet from " + remoteEndPoint + " type=" + messageType + " len=" + reader.AvailableBytes);
+            reader.Recycle();
+        }
+
         public void OnNetworkReceive(NetPeer peer, NetPacketReader reader, DeliveryMethod deliveryMethod)
         {
             if (reader.AvailableBytes < 1) { reader.Recycle(); return; }
@@ -158,11 +168,6 @@ namespace CupheadCoop.Net
                     _log.LogWarning("CoopHost: unknown packet type " + type);
                     break;
             }
-            reader.Recycle();
-        }
-
-        public void OnNetworkReceiveUnconnected(System.Net.IPEndPoint remoteEndPoint, NetPacketReader reader, UnconnectedMessageType messageType)
-        {
             reader.Recycle();
         }
 

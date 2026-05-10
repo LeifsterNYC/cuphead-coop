@@ -28,13 +28,20 @@ namespace CupheadCoop.Coop
         public static float LocalP2Y;
         public static sbyte LocalP2Facing;
 
+        // Throttled diagnostic — log "why is P1/P2 not present" once every ~2s while the
+        // host has a connected peer, so testers can tell the difference between "wrong scene"
+        // and "transform-find broken".
+        private static int _diagFrame;
+        private static string _lastDiag;
+
         /// <summary>
         /// Read live P1/P2 positions on the host. Called from <c>Plugin.LateUpdate</c> just before
         /// the network pump fires, so what we send is the simulated end-of-frame state.
         /// </summary>
         public static void HostCapture()
         {
-            var p1 = SafeGetPlayerPosition(global::PlayerId.PlayerOne, out var f1);
+            string p1Why;
+            var p1 = SafeGetPlayerPosition(global::PlayerId.PlayerOne, out var f1, out p1Why);
             if (p1.HasValue)
             {
                 LocalP1Present = true;
@@ -47,7 +54,8 @@ namespace CupheadCoop.Coop
                 LocalP1Present = false;
             }
 
-            var p2 = SafeGetPlayerPosition(global::PlayerId.PlayerTwo, out var f2);
+            string p2Why;
+            var p2 = SafeGetPlayerPosition(global::PlayerId.PlayerTwo, out var f2, out p2Why);
             if (p2.HasValue)
             {
                 LocalP2Present = true;
@@ -58,6 +66,30 @@ namespace CupheadCoop.Coop
             else
             {
                 LocalP2Present = false;
+            }
+
+            // Diagnostic: while connected, print why one or both players aren't sampled.
+            // Throttled to once every ~2s and de-duped so we don't flood the log.
+            if (++_diagFrame >= 120)
+            {
+                _diagFrame = 0;
+                if (!LocalP1Present || !LocalP2Present)
+                {
+                    string diag = "P1: " + (LocalP1Present ? "ok" : p1Why) +
+                                  ", P2: " + (LocalP2Present ? "ok" : p2Why);
+                    if (diag != _lastDiag)
+                    {
+                        _lastDiag = diag;
+                        Log?.LogInfo("ScenePuppetry capture: " + diag);
+                    }
+                }
+                else if (_lastDiag != "ok")
+                {
+                    _lastDiag = "ok";
+                    Log?.LogInfo("ScenePuppetry capture: both players sampled @ P1=(" +
+                                 LocalP1X.ToString("F1") + "," + LocalP1Y.ToString("F1") + ") P2=(" +
+                                 LocalP2X.ToString("F1") + "," + LocalP2Y.ToString("F1") + ")");
+                }
             }
         }
 
@@ -77,24 +109,24 @@ namespace CupheadCoop.Coop
                 ApplyTo(global::PlayerId.PlayerTwo, CoopState.RemoteP2X, CoopState.RemoteP2Y, CoopState.RemoteP2Facing);
         }
 
-        private static Vector2? SafeGetPlayerPosition(global::PlayerId id, out sbyte facing)
+        private static Vector2? SafeGetPlayerPosition(global::PlayerId id, out sbyte facing, out string why)
         {
             facing = 0;
+            why = null;
             try
             {
-                if (!global::PlayerManager.DoesPlayerExist(id)) return null;
+                if (!global::PlayerManager.DoesPlayerExist(id)) { why = "DoesPlayerExist=false"; return null; }
                 var ctrl = global::PlayerManager.GetPlayer(id);
-                if (ctrl == null || ctrl.transform == null) return null;
+                if (ctrl == null) { why = "GetPlayer=null"; return null; }
+                if (ctrl.transform == null) { why = "transform=null"; return null; }
                 var pos = ctrl.transform.position;
-                // localScale.x sign encodes facing on Cuphead's flipped sprites. Pin to {-1, 0, +1}.
                 float sx = ctrl.transform.localScale.x;
                 facing = sx > 0.01f ? (sbyte)1 : sx < -0.01f ? (sbyte)-1 : (sbyte)0;
                 return new Vector2(pos.x, pos.y);
             }
-            catch
+            catch (System.Exception ex)
             {
-                // Cuphead's PlayerManager isn't fully wired during startup / scene transitions.
-                // Swallow and report "not present" — we'll pick up next frame.
+                why = "ex:" + ex.GetType().Name;
                 return null;
             }
         }
