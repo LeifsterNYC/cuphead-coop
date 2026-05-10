@@ -5,71 +5,122 @@ using UnityEngine;
 namespace CupheadCoop.Coop
 {
     /// <summary>
-    /// Two stacked input gates on Rewired.Player.GetButton/GetButtonDown/GetButtonUp/GetAxis:
+    /// Three-layer Rewired input interception. Order matters — gates run as Prefix, override
+    /// runs as Postfix.
     ///
-    /// 1. <b>Focus gate</b> — when this Cuphead window doesn't have OS focus, return zero. Stops
-    ///    cross-window input bleed when running two Cuphead instances on a single PC for solo
-    ///    testing. Harmless on multi-PC setups.
+    /// 1. <b>Focus gate (Prefix, returns 0 to skip original)</b> — when the Cuphead window
+    ///    doesn't have OS focus and FocusGateInput is on, suppress all input. Solo
+    ///    two-instance testing on a single PC: stops cross-window input bleed.
     ///
-    /// 2. <b>Client gate</b> — when <see cref="CoopMode.Client"/> is active, return zero so the
-    ///    local Cuphead simulation doesn't act on keyboard input. Without this, the client's
-    ///    local cup runs/ducks/jumps based on local input AND those animation states fight with
-    ///    the host-streamed transforms+animator overrides every frame, producing the run↔duck
-    ///    flicker the tester saw. With it, the local cup is a pure renderer driven entirely by
-    ///    snapshots.
+    /// 2. <b>Client mirror gate (Prefix, fills mirrored result and skips original)</b> — when
+    ///    Mode == Client, return the host-streamed input mirror (PlayerSnapshot.Buttons /
+    ///    Axes) for both Player 1 and Player 2. Without mirroring, client's local sim has
+    ///    zero input → P1 never fires weapons → no local AbstractProjectile spawns to bind
+    ///    against host's NetworkID stream → projectiles invisible on client. With it, both
+    ///    sides run the simulation with the same inputs and produce nearly identical state.
     ///
-    /// The gates skip their effect when <see cref="CoopState.IsCapturingLocalInput"/> is true —
-    /// that's set inside <c>Plugin.CaptureLocalInputForUpload</c> so our own input read can
-    /// still see real keypresses for shipping to the host.
+    /// 3. <b>Host P2 override (Postfix)</b> — on host, when reading P2's Rewired, substitute
+    ///    the network-received input from CoopState. Has been there since M3.
+    ///
+    /// All three gates skip their effect when <see cref="CoopState.IsCapturingLocalInput"/>
+    /// is set — that flag is held while <c>Plugin.CaptureLocalInputForUpload</c> and
+    /// <c>ScenePuppetry.CaptureInputs</c> read raw local Rewired so we don't recursively
+    /// substitute mirrored values back into the upload stream.
     /// </summary>
     [HarmonyPatch]
     internal static class RewiredFocusGate
     {
-        private static bool ShouldSuppress()
+        // Returns true if focus-gate should suppress (return zero) for any reason that's
+        // not "we have a mirrored value to substitute". Mirror substitution is handled
+        // separately so the result can carry actual data.
+        private static bool ShouldSuppressForFocus()
         {
             if (CoopState.IsCapturingLocalInput) return false;
             if (ModConfig.FocusGateInput.Value && !Application.isFocused) return true;
-            if (CoopState.Mode == CoopMode.Client) return true;
             return false;
+        }
+
+        // Returns 1 if we should fill from P1 mirror, 2 if from P2 mirror, 0 if no mirror
+        // applies (Off mode, host mode, or the player id doesn't match a known slot).
+        // Skips when IsCapturingLocalInput is set so capture paths read raw local Rewired.
+        private static int ClientMirrorSlot(Player p)
+        {
+            if (CoopState.IsCapturingLocalInput) return 0;
+            if (CoopState.Mode != CoopMode.Client) return 0;
+            if (p == null) return 0;
+            int p1Id = CoopState.RewiredPlayer1Id;
+            int p2Id = CoopState.RewiredPlayer2Id;
+            if (p1Id >= 0 && p.id == p1Id) return 1;
+            if (p2Id >= 0 && p.id == p2Id) return 2;
+            return 0;
         }
 
         [HarmonyPatch(typeof(Player), nameof(Player.GetButton), new[] { typeof(int) })]
         [HarmonyPrefix]
-        private static bool GetButton_Prefix(ref bool __result)
+        private static bool GetButton_Prefix(Player __instance, int actionId, ref bool __result)
         {
-            if (!ShouldSuppress()) return true;
-            __result = false; return false;
+            if (ShouldSuppressForFocus()) { __result = false; return false; }
+            int slot = ClientMirrorSlot(__instance);
+            if (slot == 1) { __result = CoopState.IsClientP1ButtonHeld(actionId); return false; }
+            if (slot == 2) { __result = CoopState.IsClientP2ButtonHeld(actionId); return false; }
+            return true;
         }
 
         [HarmonyPatch(typeof(Player), nameof(Player.GetButtonDown), new[] { typeof(int) })]
         [HarmonyPrefix]
-        private static bool GetButtonDown_Prefix(ref bool __result)
+        private static bool GetButtonDown_Prefix(Player __instance, int actionId, ref bool __result)
         {
-            if (!ShouldSuppress()) return true;
-            __result = false; return false;
+            if (ShouldSuppressForFocus()) { __result = false; return false; }
+            int slot = ClientMirrorSlot(__instance);
+            if (slot == 1) { __result = CoopState.IsClientP1ButtonDown(actionId); return false; }
+            if (slot == 2) { __result = CoopState.IsClientP2ButtonDown(actionId); return false; }
+            return true;
         }
 
         [HarmonyPatch(typeof(Player), nameof(Player.GetButtonUp), new[] { typeof(int) })]
         [HarmonyPrefix]
-        private static bool GetButtonUp_Prefix(ref bool __result)
+        private static bool GetButtonUp_Prefix(Player __instance, int actionId, ref bool __result)
         {
-            if (!ShouldSuppress()) return true;
-            __result = false; return false;
+            if (ShouldSuppressForFocus()) { __result = false; return false; }
+            int slot = ClientMirrorSlot(__instance);
+            if (slot == 1) { __result = CoopState.IsClientP1ButtonUp(actionId); return false; }
+            if (slot == 2) { __result = CoopState.IsClientP2ButtonUp(actionId); return false; }
+            return true;
         }
 
         [HarmonyPatch(typeof(Player), nameof(Player.GetAxis), new[] { typeof(int) })]
         [HarmonyPrefix]
-        private static bool GetAxis_Prefix(ref float __result)
+        private static bool GetAxis_Prefix(Player __instance, int actionId, ref float __result)
         {
-            if (!ShouldSuppress()) return true;
-            __result = 0f; return false;
+            if (ShouldSuppressForFocus()) { __result = 0f; return false; }
+            int slot = ClientMirrorSlot(__instance);
+            if (slot == 1)
+            {
+                if (actionId == 0) __result = CoopState.MirroredP1AxisX;
+                else if (actionId == 1) __result = CoopState.MirroredP1AxisY;
+                else __result = 0f;
+                return false;
+            }
+            if (slot == 2)
+            {
+                if (actionId == 0) __result = CoopState.MirroredP2AxisX;
+                else if (actionId == 1) __result = CoopState.MirroredP2AxisY;
+                else __result = 0f;
+                return false;
+            }
+            return true;
         }
     }
 
     /// <summary>
-    /// Patches Rewired.Player.GetButton/GetButtonDown/GetButtonUp/GetAxis so that, when the
-    /// instance corresponds to Cuphead's Player 2 AND we have a remote input source active,
-    /// the value comes from the network frame rather than the local input device.
+    /// Host-side Player 2 override. When host reads Player 2's Rewired input, substitute
+    /// the network-received frame (CoopState.CurrentButtons / Axes) so host's local P2
+    /// simulation is driven by the client's keyboard.
+    ///
+    /// Implemented as Postfix (rather than Prefix-replace) so it stacks cleanly with
+    /// RewiredFocusGate's Prefix. On host, FocusGate doesn't suppress (Mode != Client)
+    /// and ClientMirrorSlot returns 0 (Mode != Client), so the original GetButton runs,
+    /// then this Postfix overrides for P2 only.
     ///
     /// We only patch the integer-id overloads because Cuphead exclusively passes int ids
     /// (the CupheadButton enum). String overloads aren't on the hot path for gameplay.

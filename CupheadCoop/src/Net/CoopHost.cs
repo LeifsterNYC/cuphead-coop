@@ -93,7 +93,10 @@ namespace CupheadCoop.Net
                     AnimStateHash = ScenePuppetry.LocalP1AnimHash,
                     AnimNormalizedTime = ScenePuppetry.LocalP1AnimTime,
                     Hp = ScenePuppetry.LocalP1Hp,
-                    IsDead = ScenePuppetry.LocalP1IsDead
+                    IsDead = ScenePuppetry.LocalP1IsDead,
+                    Buttons = ScenePuppetry.LocalP1Buttons,
+                    AxisX_q = ScenePuppetry.LocalP1AxisX_q,
+                    AxisY_q = ScenePuppetry.LocalP1AxisY_q
                 },
                 P2 = new PlayerSnapshot
                 {
@@ -104,7 +107,10 @@ namespace CupheadCoop.Net
                     AnimStateHash = ScenePuppetry.LocalP2AnimHash,
                     AnimNormalizedTime = ScenePuppetry.LocalP2AnimTime,
                     Hp = ScenePuppetry.LocalP2Hp,
-                    IsDead = ScenePuppetry.LocalP2IsDead
+                    IsDead = ScenePuppetry.LocalP2IsDead,
+                    Buttons = ScenePuppetry.LocalP2Buttons,
+                    AxisX_q = ScenePuppetry.LocalP2AxisX_q,
+                    AxisY_q = ScenePuppetry.LocalP2AxisY_q
                 },
                 IsPaused = PauseSync.LocalIsPaused,
                 SceneName = SceneSync.LocalSceneName,
