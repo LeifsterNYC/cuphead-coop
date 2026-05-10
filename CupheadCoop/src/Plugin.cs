@@ -11,7 +11,7 @@ namespace CupheadCoop
     public class Plugin : BaseUnityPlugin
     {
         public const string GUID = "leif.cupheadcoop";
-        public const string Version = "0.7.4";
+        public const string Version = "0.7.5";
 
         private Harmony _harmony;
         private CoopHost _host;

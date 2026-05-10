@@ -147,39 +147,91 @@ namespace CupheadCoop.Coop
             why = null;
             try
             {
-                if (!global::PlayerManager.DoesPlayerExist(id)) { why = "DoesPlayerExist=false"; return null; }
-                var ctrl = global::PlayerManager.GetPlayer(id);
-                if (ctrl == null) { why = "GetPlayer=null"; return null; }
-                if (ctrl.transform == null) { why = "transform=null"; return null; }
-                var pos = ctrl.transform.position;
-                float sx = ctrl.transform.localScale.x;
-                facing = sx > 0.01f ? (sbyte)1 : sx < -0.01f ? (sbyte)-1 : (sbyte)0;
-
-                var animator = ctrl.GetComponentInChildren<Animator>();
-                if (animator != null && animator.isActiveAndEnabled && animator.runtimeAnimatorController != null)
+                // Level case — AbstractPlayerController.
+                if (global::PlayerManager.DoesPlayerExist(id))
                 {
-                    var st = animator.GetCurrentAnimatorStateInfo(0);
-                    animHash = st.fullPathHash;
-                    float t = st.normalizedTime;
-                    animTime = t - Mathf.Floor(t);
+                    var ctrl = global::PlayerManager.GetPlayer(id);
+                    if (ctrl != null && ctrl.transform != null)
+                    {
+                        var pos = ctrl.transform.position;
+                        float sx = ctrl.transform.localScale.x;
+                        facing = sx > 0.01f ? (sbyte)1 : sx < -0.01f ? (sbyte)-1 : (sbyte)0;
+
+                        var animator = ctrl.GetComponentInChildren<Animator>();
+                        if (animator != null && animator.isActiveAndEnabled && animator.runtimeAnimatorController != null)
+                        {
+                            var st = animator.GetCurrentAnimatorStateInfo(0);
+                            animHash = st.fullPathHash;
+                            float t = st.normalizedTime;
+                            animTime = t - Mathf.Floor(t);
+                        }
+
+                        if (ctrl.stats != null)
+                        {
+                            int h = ctrl.stats.Health;
+                            if (h < -128) h = -128;
+                            else if (h > 127) h = 127;
+                            hp = (sbyte)h;
+                        }
+                        isDead = ctrl.IsDead;
+                        return new Vector2(pos.x, pos.y);
+                    }
                 }
 
-                // HP + death state. Cuphead's max HP is single-digit so sbyte is plenty.
-                if (ctrl.stats != null)
+                // Map case — fall through to MapPlayerController which is a separate hierarchy
+                // used on the world-map scenes. Doesn't have HP/IsDead/PlayerStatsManager.
+                var mapCtrl = FindMapPlayer(id);
+                if (mapCtrl != null && mapCtrl.transform != null)
                 {
-                    int h = ctrl.stats.Health;
-                    if (h < -128) h = -128;
-                    else if (h > 127) h = 127;
-                    hp = (sbyte)h;
+                    var pos = mapCtrl.transform.position;
+                    float sx = mapCtrl.transform.localScale.x;
+                    facing = sx > 0.01f ? (sbyte)1 : sx < -0.01f ? (sbyte)-1 : (sbyte)0;
+
+                    var animator = mapCtrl.GetComponentInChildren<Animator>();
+                    if (animator != null && animator.isActiveAndEnabled && animator.runtimeAnimatorController != null)
+                    {
+                        var st = animator.GetCurrentAnimatorStateInfo(0);
+                        animHash = st.fullPathHash;
+                        float t = st.normalizedTime;
+                        animTime = t - Mathf.Floor(t);
+                    }
+                    return new Vector2(pos.x, pos.y);
                 }
-                isDead = ctrl.IsDead;
-                return new Vector2(pos.x, pos.y);
+
+                why = "DoesPlayerExist=false (no MapPlayerController either)";
+                return null;
             }
             catch (System.Exception ex)
             {
                 why = "ex:" + ex.GetType().Name;
                 return null;
             }
+        }
+
+        // Cached lookup so we're not enumerating every frame. Refreshed when the cached
+        // reference is destroyed (scene transition).
+        private static global::MapPlayerController _cachedMapP1;
+        private static global::MapPlayerController _cachedMapP2;
+
+        private static global::MapPlayerController FindMapPlayer(global::PlayerId id)
+        {
+            // Quick path: cached and still alive.
+            if (id == global::PlayerId.PlayerOne && _cachedMapP1 != null && _cachedMapP1.id == id)
+                return _cachedMapP1;
+            if (id == global::PlayerId.PlayerTwo && _cachedMapP2 != null && _cachedMapP2.id == id)
+                return _cachedMapP2;
+
+            // Slow path: enumerate. World maps have at most 2 active map players.
+            var all = Object.FindObjectsOfType<global::MapPlayerController>();
+            for (int i = 0; i < all.Length; i++)
+            {
+                if (all[i] == null) continue;
+                if (all[i].id == global::PlayerId.PlayerOne) _cachedMapP1 = all[i];
+                else if (all[i].id == global::PlayerId.PlayerTwo) _cachedMapP2 = all[i];
+            }
+            if (id == global::PlayerId.PlayerOne) return _cachedMapP1;
+            if (id == global::PlayerId.PlayerTwo) return _cachedMapP2;
+            return null;
         }
 
         // Cached reflection for the private PlayerStatsManager.Health setter, used to push the
@@ -202,10 +254,29 @@ namespace CupheadCoop.Coop
         {
             try
             {
-                if (!global::PlayerManager.DoesPlayerExist(id)) return;
-                var ctrl = global::PlayerManager.GetPlayer(id);
-                if (ctrl == null || ctrl.transform == null) return;
-                var t = ctrl.transform;
+                Transform t = null;
+                Animator targetAnim = null;
+                global::PlayerStatsManager targetStats = null;
+
+                if (global::PlayerManager.DoesPlayerExist(id))
+                {
+                    var ctrl = global::PlayerManager.GetPlayer(id);
+                    if (ctrl != null && ctrl.transform != null)
+                    {
+                        t = ctrl.transform;
+                        targetAnim = ctrl.GetComponentInChildren<Animator>();
+                        targetStats = ctrl.stats;
+                    }
+                }
+
+                if (t == null)
+                {
+                    // Map case
+                    var mapCtrl = FindMapPlayer(id);
+                    if (mapCtrl == null || mapCtrl.transform == null) return;
+                    t = mapCtrl.transform;
+                    targetAnim = mapCtrl.GetComponentInChildren<Animator>();
+                }
                 var p = t.position;
                 p.x = x;
                 p.y = y;
@@ -219,30 +290,27 @@ namespace CupheadCoop.Coop
                     t.localScale = s;
                 }
 
-                if (animHash != 0)
+                if (animHash != 0 && targetAnim != null && targetAnim.isActiveAndEnabled
+                    && targetAnim.runtimeAnimatorController != null)
                 {
-                    var animator = ctrl.GetComponentInChildren<Animator>();
-                    if (animator != null && animator.isActiveAndEnabled && animator.runtimeAnimatorController != null)
+                    var current = targetAnim.GetCurrentAnimatorStateInfo(0);
+                    if (current.fullPathHash != animHash)
                     {
-                        var current = animator.GetCurrentAnimatorStateInfo(0);
-                        if (current.fullPathHash != animHash)
-                        {
-                            animator.Play(animHash, 0, animTime);
-                        }
-                        else if (Mathf.Abs((current.normalizedTime - Mathf.Floor(current.normalizedTime)) - animTime) > 0.15f)
-                        {
-                            animator.Play(animHash, 0, animTime);
-                        }
+                        targetAnim.Play(animHash, 0, animTime);
+                    }
+                    else if (Mathf.Abs((current.normalizedTime - Mathf.Floor(current.normalizedTime)) - animTime) > 0.15f)
+                    {
+                        targetAnim.Play(animHash, 0, animTime);
                     }
                 }
 
                 // Push HP through the property setter so its OnHealthChanged event fires and the
-                // HUD updates. Skip when the host hasn't captured yet (-1 sentinel).
-                if (hp >= 0 && ctrl.stats != null)
+                // HUD updates. Map case: targetStats is null so we skip naturally.
+                if (hp >= 0 && targetStats != null)
                 {
                     var setter = SetHealthSetter;
-                    if (setter != null && ctrl.stats.Health != hp)
-                        setter.Invoke(ctrl.stats, new object[] { (int)hp });
+                    if (setter != null && targetStats.Health != hp)
+                        setter.Invoke(targetStats, new object[] { (int)hp });
                 }
             }
             catch
