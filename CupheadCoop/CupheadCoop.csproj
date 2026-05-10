@@ -99,4 +99,17 @@
     <Message Importance="high" Text="Deployed to: $(PluginsDir)" />
   </Target>
 
+  <!-- Solo two-instance testing uses a sibling Cuphead install ('Cuphead-client') alongside
+       the main one. If it exists, mirror the build there too — otherwise the launcher's
+       second window keeps loading whatever stale DLL was last there, and 'tested fix doesn't
+       seem to apply' debugging burns a cycle. -->
+  <Target Name="DeployToClientInstall" AfterTargets="Build" Condition="'$(Configuration)' == 'Debug' AND Exists('$(CupheadDir)-client\BepInEx')">
+    <MakeDir Directories="$(CupheadDir)-client\BepInEx\plugins\CupheadCoop" />
+    <ItemGroup>
+      <ClientDeployFiles Include="$(OutputPath)*.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(ClientDeployFiles)" DestinationFolder="$(CupheadDir)-client\BepInEx\plugins\CupheadCoop" SkipUnchangedFiles="true" />
+    <Message Importance="high" Text="Deployed to: $(CupheadDir)-client\BepInEx\plugins\CupheadCoop" />
+  </Target>
+
 </Project>
