@@ -326,6 +326,20 @@ namespace CupheadCoop.Coop
             LastBindsThisTick = 0;
             LastDestroyedThisTick = 0;
         }
+
+        /// <summary>
+        /// True if this projectile (on client) is currently bound to a host NetworkID.
+        /// Used by the lifecycle patches to decide whether to suppress local-sim movement:
+        /// bound projectiles get their position from host's stream (suppress local move to
+        /// avoid jitter); unbound projectiles run their local Update/FixedUpdate so they can
+        /// self-destruct via lifetime/distance (otherwise they'd accumulate as visible
+        /// floating debris when client's sim spawns extras host doesn't have).
+        /// </summary>
+        public static bool IsBoundClient(AbstractProjectile p)
+        {
+            if (p == null) return false;
+            return _clientInstToId.ContainsKey(p.GetInstanceID());
+        }
     }
 
     /// <summary>
@@ -355,37 +369,45 @@ namespace CupheadCoop.Coop
                 ProjectileSync.OnProjectileDestroyClient(__instance);
         }
 
-        // Suppress Update + FixedUpdate on client so the local projectile sim doesn't move
-        // bound projectiles between our LateUpdate position-forcing writes. Without this, the
-        // projectile flies along its locally-computed trajectory each Update, then snaps to
-        // host's position each LateUpdate — visible as 1-frame-jitter trails of the sprite.
+        // Suppress Update + FixedUpdate + Move on client only for projectiles BOUND to a host
+        // NetworkID. Bound projectiles get their position from host's stream every LateUpdate,
+        // so letting local sim move them would cause 1-frame jitter snapping to host pos.
+        //
+        // UNBOUND projectiles (client's local sim spawned them but host doesn't have a
+        // matching NetworkID) need their normal Update/FixedUpdate so AbstractProjectile.Update's
+        // lifetime/distance tracking can self-destruct them. Without this, they'd accumulate as
+        // visible "floating debris" — the bug seen in v0.8.3 where unbound peashooter shots
+        // froze in place around the cup.
+        //
         // Only blocks the base AbstractProjectile body — subclasses that override these
         // methods need their own patches (BasicProjectile.Move below covers the common
-        // straight-line movement case). On Mode==Client we always block, including for
-        // unbound locals (they're about to be bound or reaped anyway).
+        // straight-line movement case).
         [HarmonyPatch(typeof(AbstractProjectile), "Update")]
         [HarmonyPrefix]
-        private static bool Update_Prefix()
+        private static bool Update_Prefix(AbstractProjectile __instance)
         {
-            return CoopState.Mode != CoopMode.Client;
+            if (CoopState.Mode != CoopMode.Client) return true;
+            return !ProjectileSync.IsBoundClient(__instance);
         }
 
         [HarmonyPatch(typeof(AbstractProjectile), "FixedUpdate")]
         [HarmonyPrefix]
-        private static bool FixedUpdate_Prefix()
+        private static bool FixedUpdate_Prefix(AbstractProjectile __instance)
         {
-            return CoopState.Mode != CoopMode.Client;
+            if (CoopState.Mode != CoopMode.Client) return true;
+            return !ProjectileSync.IsBoundClient(__instance);
         }
 
-        // BasicProjectile.FixedUpdate calls base (which we just blocked on client) then
-        // conditionally calls Move() — Move is the actual position-mutating call for
-        // straight-line projectiles. Blocking BasicProjectile.Move on client ensures bound
-        // BasicProjectile instances get their position only from host's stream.
+        // BasicProjectile.FixedUpdate calls base (which we just decided to skip on client for
+        // bound only) then conditionally calls Move() — Move is the actual position-mutating
+        // call for straight-line projectiles. Same gate: block only when the instance is bound
+        // so unbound BasicProjectiles can fly their local trajectory and self-reap.
         [HarmonyPatch(typeof(BasicProjectile), "Move")]
         [HarmonyPrefix]
-        private static bool BasicProjectile_Move_Prefix()
+        private static bool BasicProjectile_Move_Prefix(AbstractProjectile __instance)
         {
-            return CoopState.Mode != CoopMode.Client;
+            if (CoopState.Mode != CoopMode.Client) return true;
+            return !ProjectileSync.IsBoundClient(__instance);
         }
     }
 }
