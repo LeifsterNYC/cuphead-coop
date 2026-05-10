@@ -87,7 +87,9 @@ namespace CupheadCoop.Net
                     Y = ScenePuppetry.LocalP1Y,
                     Facing = ScenePuppetry.LocalP1Facing,
                     AnimStateHash = ScenePuppetry.LocalP1AnimHash,
-                    AnimNormalizedTime = ScenePuppetry.LocalP1AnimTime
+                    AnimNormalizedTime = ScenePuppetry.LocalP1AnimTime,
+                    Hp = ScenePuppetry.LocalP1Hp,
+                    IsDead = ScenePuppetry.LocalP1IsDead
                 },
                 P2 = new PlayerSnapshot
                 {
@@ -96,7 +98,9 @@ namespace CupheadCoop.Net
                     Y = ScenePuppetry.LocalP2Y,
                     Facing = ScenePuppetry.LocalP2Facing,
                     AnimStateHash = ScenePuppetry.LocalP2AnimHash,
-                    AnimNormalizedTime = ScenePuppetry.LocalP2AnimTime
+                    AnimNormalizedTime = ScenePuppetry.LocalP2AnimTime,
+                    Hp = ScenePuppetry.LocalP2Hp,
+                    IsDead = ScenePuppetry.LocalP2IsDead
                 },
                 EntityCount = (byte)entityCount,
                 Entities = EntitySync.HostBuffer

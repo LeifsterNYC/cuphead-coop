@@ -18,6 +18,7 @@ namespace CupheadCoop.Coop
             harmony.PatchAll(typeof(RewiredPatches));
             harmony.PatchAll(typeof(PlayerInputInit_Patch));
             harmony.PatchAll(typeof(NatPunchModule_SkipCtor_Patch));
+            harmony.PatchAll(typeof(PlayerDamageReceiver_TakeDamage_Patch));
         }
 
         private static bool ShouldOverride(Player __instance)

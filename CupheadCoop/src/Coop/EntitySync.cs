@@ -125,6 +125,17 @@ namespace CupheadCoop.Coop
                 {
                     Log?.LogInfo("EntitySync: cached " + kept + " entities (" + skipped + " skipped) for scene '"
                                  + scene + "'");
+                    // Dump short names of what we caught so the tester can see what's actually
+                    // being synced. Throttled to scene-change events; one line for everything.
+                    if (kept > 0 && kept <= 16)
+                    {
+                        var names = new List<string>(kept);
+                        foreach (var v in _byPath.Values)
+                        {
+                            if (v.Transform != null) names.Add(v.Transform.name);
+                        }
+                        Log?.LogInfo("EntitySync: tracking " + string.Join(", ", names.ToArray()));
+                    }
                     _lastLoggedCount = kept;
                     _lastLoggedScene = scene;
                 }

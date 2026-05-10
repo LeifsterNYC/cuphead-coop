@@ -13,7 +13,8 @@ namespace CupheadCoop.Net
         // v2 = M4 added StateSnapshot (host streams P1/P2 positions back to client)
         // v3 = M5 PlayerSnapshot extended with animator state hash + normalized time
         // v4 = M6 StateSnapshot now carries an entity array (boss + scene actors)
-        public const int Version = 4;
+        // v5 = M8 PlayerSnapshot extended with Hp + IsDead
+        public const int Version = 5;
     }
 
     internal enum PacketType : byte
@@ -113,8 +114,10 @@ namespace CupheadCoop.Net
         public float X;
         public float Y;
         public sbyte Facing;
-        public int AnimStateHash;        // 0 = "not captured"; client treats this as "skip"
-        public float AnimNormalizedTime; // Animator.NormalizedTime mod 1; lets the client resync mid-loop
+        public int AnimStateHash;
+        public float AnimNormalizedTime;
+        public sbyte Hp;       // -1 = unknown; 0+ = current HP. Cuphead's max is single digits so 1 byte suffices.
+        public bool IsDead;
 
         public void Write(NetDataWriter w)
         {
@@ -124,6 +127,8 @@ namespace CupheadCoop.Net
             w.Put(Facing);
             w.Put(AnimStateHash);
             w.Put(AnimNormalizedTime);
+            w.Put(Hp);
+            w.Put(IsDead);
         }
 
         public static PlayerSnapshot Read(NetDataReader r)
@@ -135,7 +140,9 @@ namespace CupheadCoop.Net
                 Y = r.GetFloat(),
                 Facing = r.GetSByte(),
                 AnimStateHash = r.GetInt(),
-                AnimNormalizedTime = r.GetFloat()
+                AnimNormalizedTime = r.GetFloat(),
+                Hp = r.GetSByte(),
+                IsDead = r.GetBool()
             };
         }
     }

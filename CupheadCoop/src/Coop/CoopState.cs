@@ -53,12 +53,16 @@ namespace CupheadCoop.Coop
         public static sbyte RemoteP1Facing;
         public static int RemoteP1AnimHash;
         public static float RemoteP1AnimTime;
+        public static sbyte RemoteP1Hp;
+        public static bool RemoteP1IsDead;
         public static bool RemoteP2Present;
         public static float RemoteP2X;
         public static float RemoteP2Y;
         public static sbyte RemoteP2Facing;
         public static int RemoteP2AnimHash;
         public static float RemoteP2AnimTime;
+        public static sbyte RemoteP2Hp;
+        public static bool RemoteP2IsDead;
 
         // M6 entity sync. Fixed-size buffer to avoid GC churn; RemoteEntityCount tracks valid slots.
         public static readonly EntitySnapshot[] RemoteEntities = new EntitySnapshot[EntitySync.MaxSyncedEntities];
@@ -120,12 +124,16 @@ namespace CupheadCoop.Coop
             RemoteP1Facing = 0;
             RemoteP1AnimHash = 0;
             RemoteP1AnimTime = 0f;
+            RemoteP1Hp = -1;
+            RemoteP1IsDead = false;
             RemoteP2Present = false;
             RemoteP2X = 0f;
             RemoteP2Y = 0f;
             RemoteP2Facing = 0;
             RemoteP2AnimHash = 0;
             RemoteP2AnimTime = 0f;
+            RemoteP2Hp = -1;
+            RemoteP2IsDead = false;
             RemoteEntityCount = 0;
         }
 
@@ -133,24 +141,27 @@ namespace CupheadCoop.Coop
         /// Apply a host-streamed world snapshot. Out-of-order packets are dropped on the floor.
         /// </summary>
         public static void ApplyRemoteState(uint sequence,
-                                            bool p1Present, float p1X, float p1Y, sbyte p1Facing, int p1Anim, float p1AnimT,
-                                            bool p2Present, float p2X, float p2Y, sbyte p2Facing, int p2Anim, float p2AnimT,
+                                            PlayerSnapshot p1, PlayerSnapshot p2,
                                             EntitySnapshot[] entities, int entityCount)
         {
             if (sequence != 0 && sequence <= RemoteStateSequence) return;
             RemoteStateSequence = sequence;
-            RemoteP1Present = p1Present;
-            RemoteP1X = p1X;
-            RemoteP1Y = p1Y;
-            RemoteP1Facing = p1Facing;
-            RemoteP1AnimHash = p1Anim;
-            RemoteP1AnimTime = p1AnimT;
-            RemoteP2Present = p2Present;
-            RemoteP2X = p2X;
-            RemoteP2Y = p2Y;
-            RemoteP2Facing = p2Facing;
-            RemoteP2AnimHash = p2Anim;
-            RemoteP2AnimTime = p2AnimT;
+            RemoteP1Present = p1.Present;
+            RemoteP1X = p1.X;
+            RemoteP1Y = p1.Y;
+            RemoteP1Facing = p1.Facing;
+            RemoteP1AnimHash = p1.AnimStateHash;
+            RemoteP1AnimTime = p1.AnimNormalizedTime;
+            RemoteP1Hp = p1.Hp;
+            RemoteP1IsDead = p1.IsDead;
+            RemoteP2Present = p2.Present;
+            RemoteP2X = p2.X;
+            RemoteP2Y = p2.Y;
+            RemoteP2Facing = p2.Facing;
+            RemoteP2AnimHash = p2.AnimStateHash;
+            RemoteP2AnimTime = p2.AnimNormalizedTime;
+            RemoteP2Hp = p2.Hp;
+            RemoteP2IsDead = p2.IsDead;
 
             // Copy entities into our pre-allocated buffer to avoid retaining the network-side
             // array (which gets recycled by LiteNetLib).

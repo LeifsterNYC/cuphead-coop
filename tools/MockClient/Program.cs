@@ -73,7 +73,7 @@ while (!listener.QuitRequested)
             Console.WriteLine($"[{sw.Elapsed:mm\\:ss}] tx seq={seq}  rx state seq={listener.LastStateSeq}  " +
                               $"p1={(listener.LastP1Present ? $"{listener.LastP1X:F1},{listener.LastP1Y:F1}" : "-")}  " +
                               $"p2={(listener.LastP2Present ? $"{listener.LastP2X:F1},{listener.LastP2Y:F1}" : "-")}  " +
-                              $"entities={listener.LastEntityCount}");
+                              $"hp={listener.LastP1Hp}/{listener.LastP2Hp}  entities={listener.LastEntityCount}");
         }
     }
 
@@ -86,7 +86,7 @@ net.Stop();
 return 0;
 
 /// <summary>Wire-protocol version we claim. Must match Net/Protocol.cs in the plugin.</summary>
-static class Proto { public const int Version = 4; }
+static class Proto { public const int Version = 5; }
 
 enum InputPattern { WalkRight, WalkLeft, Jump, Idle }
 
@@ -132,6 +132,7 @@ class Listener : INetEventListener
     public float LastP1X, LastP1Y;
     public bool LastP2Present;
     public float LastP2X, LastP2Y;
+    public sbyte LastP1Hp = -1, LastP2Hp = -1;
     public int LastEntityCount;
 
     public void OnPeerConnected(NetPeer peer) =>
@@ -172,12 +173,16 @@ class Listener : INetEventListener
                 /* p1Facing */    reader.GetSByte();
                 /* p1Anim */      reader.GetInt();
                 /* p1AnimT */     reader.GetFloat();
+                LastP1Hp          = reader.GetSByte();
+                /* p1IsDead */    reader.GetBool();
                 LastP2Present     = reader.GetBool();
                 LastP2X           = reader.GetFloat();
                 LastP2Y           = reader.GetFloat();
                 /* p2Facing */    reader.GetSByte();
                 /* p2Anim */      reader.GetInt();
                 /* p2AnimT */     reader.GetFloat();
+                LastP2Hp          = reader.GetSByte();
+                /* p2IsDead */    reader.GetBool();
                 LastEntityCount   = reader.GetByte();
                 for (int i = 0; i < LastEntityCount; i++)
                 {
