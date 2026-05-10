@@ -15,7 +15,8 @@ namespace CupheadCoop.Net
         // v4 = M6 StateSnapshot now carries an entity array (boss + scene actors)
         // v5 = M8 PlayerSnapshot extended with Hp + IsDead
         // v6 = pause sync — StateSnapshot now carries an IsPaused bit
-        public const int Version = 6;
+        // v7 = M11 scene sync — StateSnapshot carries the host's active scene name
+        public const int Version = 7;
     }
 
     internal enum PacketType : byte
@@ -200,8 +201,9 @@ namespace CupheadCoop.Net
         public ushort HostTickMs;
         public PlayerSnapshot P1;
         public PlayerSnapshot P2;
-        public bool IsPaused;             // v6: host's PauseManager.state == Paused
-        public byte EntityCount;          // <= EntitySync.MaxSyncedEntities
+        public bool IsPaused;
+        public string SceneName;          // v7: host's active Unity scene name (e.g. "scene_level_veggies")
+        public byte EntityCount;
         public EntitySnapshot[] Entities;
 
         public void Write(NetDataWriter w)
@@ -212,6 +214,7 @@ namespace CupheadCoop.Net
             P1.Write(w);
             P2.Write(w);
             w.Put(IsPaused);
+            w.Put(SceneName ?? "");
             w.Put(EntityCount);
             for (int i = 0; i < EntityCount; i++) Entities[i].Write(w);
         }
@@ -225,6 +228,7 @@ namespace CupheadCoop.Net
                 P1 = PlayerSnapshot.Read(r),
                 P2 = PlayerSnapshot.Read(r),
                 IsPaused = r.GetBool(),
+                SceneName = r.GetString(),
                 EntityCount = r.GetByte()
             };
             s.Entities = s.EntityCount > 0 ? new EntitySnapshot[s.EntityCount] : null;

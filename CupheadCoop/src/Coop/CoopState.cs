@@ -71,6 +71,9 @@ namespace CupheadCoop.Coop
         // Host's pause state. Client's PauseSync.ApplyFromHost converges to this each frame.
         public static bool RemoteIsPaused;
 
+        // Host's active scene name. Client's SceneSync.ApplyFromHost converges to this.
+        public static string RemoteSceneName = "";
+
         public static bool IsButtonHeld(int actionId)
         {
             if (actionId < 0 || actionId >= 32) return false;
@@ -139,6 +142,7 @@ namespace CupheadCoop.Coop
             RemoteP2IsDead = false;
             RemoteEntityCount = 0;
             RemoteIsPaused = false;
+            RemoteSceneName = "";
         }
 
         /// <summary>
@@ -146,7 +150,7 @@ namespace CupheadCoop.Coop
         /// </summary>
         public static void ApplyRemoteState(uint sequence,
                                             PlayerSnapshot p1, PlayerSnapshot p2,
-                                            bool isPaused,
+                                            bool isPaused, string sceneName,
                                             EntitySnapshot[] entities, int entityCount)
         {
             if (sequence != 0 && sequence <= RemoteStateSequence) return;
@@ -175,6 +179,7 @@ namespace CupheadCoop.Coop
             for (int i = 0; i < n; i++) RemoteEntities[i] = entities[i];
             RemoteEntityCount = n;
             RemoteIsPaused = isPaused;
+            RemoteSceneName = sceneName ?? "";
         }
 
         private static float Clamp(float v, float min, float max)

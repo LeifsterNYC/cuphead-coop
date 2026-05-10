@@ -103,6 +103,7 @@ namespace CupheadCoop.Net
                     IsDead = ScenePuppetry.LocalP2IsDead
                 },
                 IsPaused = PauseSync.LocalIsPaused,
+                SceneName = SceneSync.LocalSceneName,
                 EntityCount = (byte)entityCount,
                 Entities = EntitySync.HostBuffer
             };

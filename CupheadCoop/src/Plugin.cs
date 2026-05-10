@@ -11,7 +11,7 @@ namespace CupheadCoop
     public class Plugin : BaseUnityPlugin
     {
         public const string GUID = "leif.cupheadcoop";
-        public const string Version = "0.6.3";
+        public const string Version = "0.7.0";
 
         private Harmony _harmony;
         private CoopHost _host;
@@ -31,6 +31,7 @@ namespace CupheadCoop
                 PlayerInputInit_Patch.Log = Logger;
                 ScenePuppetry.Log = Logger;
                 EntitySync.Log = Logger;
+                SceneSync.Log = Logger;
                 EntitySync.Wire();
                 LogTap.Wire();
                 Application.runInBackground = true;
@@ -96,10 +97,15 @@ namespace CupheadCoop
                 EntitySync.Tick(Time.unscaledDeltaTime);
                 ScenePuppetry.HostCapture();
                 PauseSync.HostCapture();
+                SceneSync.HostCapture();
                 _host?.TickStateSnapshot(Time.unscaledDeltaTime);
             }
             else if (CoopState.Mode == CoopMode.Client)
             {
+                // Scene sync FIRST — if we need to load a different scene, do it before
+                // touching anything else this frame (the other applies would target objects
+                // that may be unloaded a moment from now).
+                SceneSync.ApplyFromHost(CoopState.RemoteSceneName);
                 EntitySync.Tick(Time.unscaledDeltaTime);
                 ScenePuppetry.ClientApply();
                 EntitySync.ApplyToClient(CoopState.RemoteEntities, CoopState.RemoteEntityCount);
