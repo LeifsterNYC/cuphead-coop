@@ -68,23 +68,29 @@ namespace CupheadCoop
             if (CoopState.Mode == CoopMode.Host)
             {
                 string hp1 = ScenePuppetry.LocalP1Present
-                    ? ScenePuppetry.LocalP1X.ToString("0.0") + "," + ScenePuppetry.LocalP1Y.ToString("0.0")
+                    ? ScenePuppetry.LocalP1X.ToString("0.0") + "," + ScenePuppetry.LocalP1Y.ToString("0.0") +
+                      " hp=" + ScenePuppetry.LocalP1Hp + (ScenePuppetry.LocalP1IsDead ? " DEAD" : "")
                     : "-";
                 string hp2 = ScenePuppetry.LocalP2Present
-                    ? ScenePuppetry.LocalP2X.ToString("0.0") + "," + ScenePuppetry.LocalP2Y.ToString("0.0")
+                    ? ScenePuppetry.LocalP2X.ToString("0.0") + "," + ScenePuppetry.LocalP2Y.ToString("0.0") +
+                      " hp=" + ScenePuppetry.LocalP2Hp + (ScenePuppetry.LocalP2IsDead ? " DEAD" : "")
                     : "-";
-                line3 = "tx state p1=" + hp1 + " p2=" + hp2 + "  ents=" + EntitySync.LastCapturedCount;
+                line3 = "tx state p1=" + hp1 + "  p2=" + hp2 + "  ents=" + EntitySync.LastCapturedCount +
+                       (PauseSync.LocalIsPaused ? "  [PAUSED]" : "");
             }
             else if (CoopState.Mode == CoopMode.Client)
             {
                 string cp1 = CoopState.RemoteP1Present
-                    ? CoopState.RemoteP1X.ToString("0.0") + "," + CoopState.RemoteP1Y.ToString("0.0")
+                    ? CoopState.RemoteP1X.ToString("0.0") + "," + CoopState.RemoteP1Y.ToString("0.0") +
+                      " hp=" + CoopState.RemoteP1Hp + (CoopState.RemoteP1IsDead ? " DEAD" : "")
                     : "-";
                 string cp2 = CoopState.RemoteP2Present
-                    ? CoopState.RemoteP2X.ToString("0.0") + "," + CoopState.RemoteP2Y.ToString("0.0")
+                    ? CoopState.RemoteP2X.ToString("0.0") + "," + CoopState.RemoteP2Y.ToString("0.0") +
+                      " hp=" + CoopState.RemoteP2Hp + (CoopState.RemoteP2IsDead ? " DEAD" : "")
                     : "-";
-                line3 = "rx state seq=" + CoopState.RemoteStateSequence + " p1=" + cp1 + " p2=" + cp2 +
-                       "  ents=" + CoopState.RemoteEntityCount + "/" + EntitySync.CacheSize;
+                line3 = "rx state seq=" + CoopState.RemoteStateSequence + " p1=" + cp1 + "  p2=" + cp2 +
+                       "  ents=" + CoopState.RemoteEntityCount + "/" + EntitySync.CacheSize +
+                       (CoopState.RemoteIsPaused ? "  [PAUSED]" : "");
             }
 
             // Line 4+: tail of recent BepInEx log events. Capped to LogTap.MaxLines.
