@@ -11,7 +11,8 @@ namespace CupheadCoop.Net
     {
         // v1 = M3 input streaming only (host runs sim, client uploads inputs)
         // v2 = M4 added StateSnapshot (host streams P1/P2 positions back to client)
-        public const int Version = 2;
+        // v3 = M5 PlayerSnapshot extended with animator state hash + normalized time
+        public const int Version = 3;
     }
 
     internal enum PacketType : byte
@@ -99,16 +100,20 @@ namespace CupheadCoop.Net
     }
 
     /// <summary>
-    /// Per-player slice of a world-state snapshot. Just enough for the client to puppet a
-    /// local Cuphead transform: 2D position, facing sign, alive/present flag. Animation hashes
-    /// and projectiles are deliberately deferred — first M4 cut validates the round-trip.
+    /// Per-player slice of a world-state snapshot. Position + facing + animator state.
+    /// AnimStateHash is Animator.GetCurrentAnimatorStateInfo(0).fullPathHash — a stable
+    /// integer derived from the state's full path inside the Animator Controller. The
+    /// hashing function is part of the Unity Animation system's stable contract, so the
+    /// hash is the same on host and client as long as both run the same Cuphead build.
     /// </summary>
     internal struct PlayerSnapshot
     {
-        public bool Present; // false if the player isn't in the scene yet (or has left)
+        public bool Present;
         public float X;
         public float Y;
-        public sbyte Facing; // -1 = facing left, 0 = unknown, +1 = facing right
+        public sbyte Facing;
+        public int AnimStateHash;        // 0 = "not captured"; client treats this as "skip"
+        public float AnimNormalizedTime; // Animator.NormalizedTime mod 1; lets the client resync mid-loop
 
         public void Write(NetDataWriter w)
         {
@@ -116,6 +121,8 @@ namespace CupheadCoop.Net
             w.Put(X);
             w.Put(Y);
             w.Put(Facing);
+            w.Put(AnimStateHash);
+            w.Put(AnimNormalizedTime);
         }
 
         public static PlayerSnapshot Read(NetDataReader r)
@@ -125,7 +132,9 @@ namespace CupheadCoop.Net
                 Present = r.GetBool(),
                 X = r.GetFloat(),
                 Y = r.GetFloat(),
-                Facing = r.GetSByte()
+                Facing = r.GetSByte(),
+                AnimStateHash = r.GetInt(),
+                AnimNormalizedTime = r.GetFloat()
             };
         }
     }

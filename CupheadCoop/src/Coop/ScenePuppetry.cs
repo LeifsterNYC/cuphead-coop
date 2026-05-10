@@ -23,10 +23,14 @@ namespace CupheadCoop.Coop
         public static float LocalP1X;
         public static float LocalP1Y;
         public static sbyte LocalP1Facing;
+        public static int LocalP1AnimHash;
+        public static float LocalP1AnimTime;
         public static bool LocalP2Present;
         public static float LocalP2X;
         public static float LocalP2Y;
         public static sbyte LocalP2Facing;
+        public static int LocalP2AnimHash;
+        public static float LocalP2AnimTime;
 
         // Throttled diagnostic — log "why is P1/P2 not present" once every ~2s while the
         // host has a connected peer, so testers can tell the difference between "wrong scene"
@@ -41,13 +45,15 @@ namespace CupheadCoop.Coop
         public static void HostCapture()
         {
             string p1Why;
-            var p1 = SafeGetPlayerPosition(global::PlayerId.PlayerOne, out var f1, out p1Why);
+            var p1 = SafeGetPlayerSnapshot(global::PlayerId.PlayerOne, out var f1, out var ah1, out var at1, out p1Why);
             if (p1.HasValue)
             {
                 LocalP1Present = true;
                 LocalP1X = p1.Value.x;
                 LocalP1Y = p1.Value.y;
                 LocalP1Facing = f1;
+                LocalP1AnimHash = ah1;
+                LocalP1AnimTime = at1;
             }
             else
             {
@@ -55,13 +61,15 @@ namespace CupheadCoop.Coop
             }
 
             string p2Why;
-            var p2 = SafeGetPlayerPosition(global::PlayerId.PlayerTwo, out var f2, out p2Why);
+            var p2 = SafeGetPlayerSnapshot(global::PlayerId.PlayerTwo, out var f2, out var ah2, out var at2, out p2Why);
             if (p2.HasValue)
             {
                 LocalP2Present = true;
                 LocalP2X = p2.Value.x;
                 LocalP2Y = p2.Value.y;
                 LocalP2Facing = f2;
+                LocalP2AnimHash = ah2;
+                LocalP2AnimTime = at2;
             }
             else
             {
@@ -104,14 +112,19 @@ namespace CupheadCoop.Coop
             if (CoopState.RemoteStateSequence == 0) return; // never received anything yet
 
             if (CoopState.RemoteP1Present)
-                ApplyTo(global::PlayerId.PlayerOne, CoopState.RemoteP1X, CoopState.RemoteP1Y, CoopState.RemoteP1Facing);
+                ApplyTo(global::PlayerId.PlayerOne, CoopState.RemoteP1X, CoopState.RemoteP1Y,
+                        CoopState.RemoteP1Facing, CoopState.RemoteP1AnimHash, CoopState.RemoteP1AnimTime);
             if (CoopState.RemoteP2Present)
-                ApplyTo(global::PlayerId.PlayerTwo, CoopState.RemoteP2X, CoopState.RemoteP2Y, CoopState.RemoteP2Facing);
+                ApplyTo(global::PlayerId.PlayerTwo, CoopState.RemoteP2X, CoopState.RemoteP2Y,
+                        CoopState.RemoteP2Facing, CoopState.RemoteP2AnimHash, CoopState.RemoteP2AnimTime);
         }
 
-        private static Vector2? SafeGetPlayerPosition(global::PlayerId id, out sbyte facing, out string why)
+        private static Vector2? SafeGetPlayerSnapshot(global::PlayerId id, out sbyte facing,
+                                                      out int animHash, out float animTime, out string why)
         {
             facing = 0;
+            animHash = 0;
+            animTime = 0f;
             why = null;
             try
             {
@@ -122,6 +135,17 @@ namespace CupheadCoop.Coop
                 var pos = ctrl.transform.position;
                 float sx = ctrl.transform.localScale.x;
                 facing = sx > 0.01f ? (sbyte)1 : sx < -0.01f ? (sbyte)-1 : (sbyte)0;
+
+                // Animator may live on the controller itself or on a child. Search up to 2 deep.
+                var animator = ctrl.GetComponentInChildren<Animator>();
+                if (animator != null && animator.isActiveAndEnabled && animator.runtimeAnimatorController != null)
+                {
+                    var st = animator.GetCurrentAnimatorStateInfo(0);
+                    animHash = st.fullPathHash;
+                    // normalizedTime can grow unboundedly while a state loops; mod into [0,1).
+                    float t = st.normalizedTime;
+                    animTime = t - Mathf.Floor(t);
+                }
                 return new Vector2(pos.x, pos.y);
             }
             catch (System.Exception ex)
@@ -131,7 +155,7 @@ namespace CupheadCoop.Coop
             }
         }
 
-        private static void ApplyTo(global::PlayerId id, float x, float y, sbyte facing)
+        private static void ApplyTo(global::PlayerId id, float x, float y, sbyte facing, int animHash, float animTime)
         {
             try
             {
@@ -150,6 +174,29 @@ namespace CupheadCoop.Coop
                     if (magnitude < 0.001f) magnitude = 1f;
                     s.x = facing * magnitude;
                     t.localScale = s;
+                }
+
+                // Animator sync: only act when the host actually captured a hash. Otherwise
+                // we'd repeatedly Play(0) and freeze the cup on its idle frame.
+                if (animHash != 0)
+                {
+                    var animator = ctrl.GetComponentInChildren<Animator>();
+                    if (animator != null && animator.isActiveAndEnabled && animator.runtimeAnimatorController != null)
+                    {
+                        var current = animator.GetCurrentAnimatorStateInfo(0);
+                        // Only Play() when the state actually differs — calling Play every frame
+                        // resets normalizedTime each call and produces a stuttering animation.
+                        if (current.fullPathHash != animHash)
+                        {
+                            animator.Play(animHash, 0, animTime);
+                        }
+                        // If we're already in the target state, optionally re-sync time to keep
+                        // host and client phase-aligned. Threshold avoids constant tiny corrections.
+                        else if (Mathf.Abs((current.normalizedTime - Mathf.Floor(current.normalizedTime)) - animTime) > 0.15f)
+                        {
+                            animator.Play(animHash, 0, animTime);
+                        }
+                    }
                 }
             }
             catch

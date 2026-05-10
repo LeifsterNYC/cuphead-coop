@@ -50,10 +50,14 @@ namespace CupheadCoop.Coop
         public static float RemoteP1X;
         public static float RemoteP1Y;
         public static sbyte RemoteP1Facing;
+        public static int RemoteP1AnimHash;
+        public static float RemoteP1AnimTime;
         public static bool RemoteP2Present;
         public static float RemoteP2X;
         public static float RemoteP2Y;
         public static sbyte RemoteP2Facing;
+        public static int RemoteP2AnimHash;
+        public static float RemoteP2AnimTime;
 
         public static bool IsButtonHeld(int actionId)
         {
@@ -109,17 +113,22 @@ namespace CupheadCoop.Coop
             RemoteP1X = 0f;
             RemoteP1Y = 0f;
             RemoteP1Facing = 0;
+            RemoteP1AnimHash = 0;
+            RemoteP1AnimTime = 0f;
             RemoteP2Present = false;
             RemoteP2X = 0f;
             RemoteP2Y = 0f;
             RemoteP2Facing = 0;
+            RemoteP2AnimHash = 0;
+            RemoteP2AnimTime = 0f;
         }
 
         /// <summary>
         /// Apply a host-streamed world snapshot. Out-of-order packets are dropped on the floor.
         /// </summary>
-        public static void ApplyRemoteState(uint sequence, bool p1Present, float p1X, float p1Y, sbyte p1Facing,
-                                            bool p2Present, float p2X, float p2Y, sbyte p2Facing)
+        public static void ApplyRemoteState(uint sequence,
+                                            bool p1Present, float p1X, float p1Y, sbyte p1Facing, int p1Anim, float p1AnimT,
+                                            bool p2Present, float p2X, float p2Y, sbyte p2Facing, int p2Anim, float p2AnimT)
         {
             if (sequence != 0 && sequence <= RemoteStateSequence) return;
             RemoteStateSequence = sequence;
@@ -127,10 +136,14 @@ namespace CupheadCoop.Coop
             RemoteP1X = p1X;
             RemoteP1Y = p1Y;
             RemoteP1Facing = p1Facing;
+            RemoteP1AnimHash = p1Anim;
+            RemoteP1AnimTime = p1AnimT;
             RemoteP2Present = p2Present;
             RemoteP2X = p2X;
             RemoteP2Y = p2Y;
             RemoteP2Facing = p2Facing;
+            RemoteP2AnimHash = p2Anim;
+            RemoteP2AnimTime = p2AnimT;
         }
 
         private static float Clamp(float v, float min, float max)

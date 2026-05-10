@@ -83,14 +83,18 @@ namespace CupheadCoop.Net
                     Present = ScenePuppetry.LocalP1Present,
                     X = ScenePuppetry.LocalP1X,
                     Y = ScenePuppetry.LocalP1Y,
-                    Facing = ScenePuppetry.LocalP1Facing
+                    Facing = ScenePuppetry.LocalP1Facing,
+                    AnimStateHash = ScenePuppetry.LocalP1AnimHash,
+                    AnimNormalizedTime = ScenePuppetry.LocalP1AnimTime
                 },
                 P2 = new PlayerSnapshot
                 {
                     Present = ScenePuppetry.LocalP2Present,
                     X = ScenePuppetry.LocalP2X,
                     Y = ScenePuppetry.LocalP2Y,
-                    Facing = ScenePuppetry.LocalP2Facing
+                    Facing = ScenePuppetry.LocalP2Facing,
+                    AnimStateHash = ScenePuppetry.LocalP2AnimHash,
+                    AnimNormalizedTime = ScenePuppetry.LocalP2AnimTime
                 }
             };
 
