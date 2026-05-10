@@ -68,6 +68,12 @@ namespace CupheadCoop.Coop
         public static readonly EntitySnapshot[] RemoteEntities = new EntitySnapshot[EntitySync.MaxSyncedEntities];
         public static int RemoteEntityCount;
 
+        // True only while Plugin.CaptureLocalInputForUpload is reading Rewired. The input gate
+        // patches let the call through unchanged when this is set, but otherwise return zero
+        // for client-mode Cupheads so the local sim doesn't react to keyboard input that's
+        // meant for upload only.
+        public static bool IsCapturingLocalInput;
+
         // Host's pause state. Client's PauseSync.ApplyFromHost converges to this each frame.
         public static bool RemoteIsPaused;
 

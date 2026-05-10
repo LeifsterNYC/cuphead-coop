@@ -5,23 +5,39 @@ using UnityEngine;
 namespace CupheadCoop.Coop
 {
     /// <summary>
-    /// Solo-testing input-bleed fix. When two Cuphead instances run on one PC sharing a
-    /// keyboard, both windows' Rewired input subsystems read the same keypresses regardless
-    /// of which window is focused — every press moves the cup in BOTH games. Gating Rewired's
-    /// per-call reads on <c>Application.isFocused</c> means only the focused window processes
-    /// input, so the user can alt-tab between host and client to switch which cup they control.
+    /// Two stacked input gates on Rewired.Player.GetButton/GetButtonDown/GetButtonUp/GetAxis:
     ///
-    /// Harmless on multi-PC setups since Cuphead is always focused on its own machine. Can be
-    /// disabled via <c>[Sync] FocusGateInput</c> in the cfg if it ever interferes.
+    /// 1. <b>Focus gate</b> — when this Cuphead window doesn't have OS focus, return zero. Stops
+    ///    cross-window input bleed when running two Cuphead instances on a single PC for solo
+    ///    testing. Harmless on multi-PC setups.
+    ///
+    /// 2. <b>Client gate</b> — when <see cref="CoopMode.Client"/> is active, return zero so the
+    ///    local Cuphead simulation doesn't act on keyboard input. Without this, the client's
+    ///    local cup runs/ducks/jumps based on local input AND those animation states fight with
+    ///    the host-streamed transforms+animator overrides every frame, producing the run↔duck
+    ///    flicker the tester saw. With it, the local cup is a pure renderer driven entirely by
+    ///    snapshots.
+    ///
+    /// The gates skip their effect when <see cref="CoopState.IsCapturingLocalInput"/> is true —
+    /// that's set inside <c>Plugin.CaptureLocalInputForUpload</c> so our own input read can
+    /// still see real keypresses for shipping to the host.
     /// </summary>
     [HarmonyPatch]
     internal static class RewiredFocusGate
     {
+        private static bool ShouldSuppress()
+        {
+            if (CoopState.IsCapturingLocalInput) return false;
+            if (ModConfig.FocusGateInput.Value && !Application.isFocused) return true;
+            if (CoopState.Mode == CoopMode.Client) return true;
+            return false;
+        }
+
         [HarmonyPatch(typeof(Player), nameof(Player.GetButton), new[] { typeof(int) })]
         [HarmonyPrefix]
         private static bool GetButton_Prefix(ref bool __result)
         {
-            if (!ModConfig.FocusGateInput.Value || Application.isFocused) return true;
+            if (!ShouldSuppress()) return true;
             __result = false; return false;
         }
 
@@ -29,7 +45,7 @@ namespace CupheadCoop.Coop
         [HarmonyPrefix]
         private static bool GetButtonDown_Prefix(ref bool __result)
         {
-            if (!ModConfig.FocusGateInput.Value || Application.isFocused) return true;
+            if (!ShouldSuppress()) return true;
             __result = false; return false;
         }
 
@@ -37,7 +53,7 @@ namespace CupheadCoop.Coop
         [HarmonyPrefix]
         private static bool GetButtonUp_Prefix(ref bool __result)
         {
-            if (!ModConfig.FocusGateInput.Value || Application.isFocused) return true;
+            if (!ShouldSuppress()) return true;
             __result = false; return false;
         }
 
@@ -45,7 +61,7 @@ namespace CupheadCoop.Coop
         [HarmonyPrefix]
         private static bool GetAxis_Prefix(ref float __result)
         {
-            if (!ModConfig.FocusGateInput.Value || Application.isFocused) return true;
+            if (!ShouldSuppress()) return true;
             __result = 0f; return false;
         }
     }

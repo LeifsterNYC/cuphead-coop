@@ -11,7 +11,7 @@ namespace CupheadCoop
     public class Plugin : BaseUnityPlugin
     {
         public const string GUID = "leif.cupheadcoop";
-        public const string Version = "0.7.2";
+        public const string Version = "0.7.3";
 
         private Harmony _harmony;
         private CoopHost _host;
@@ -173,23 +173,28 @@ namespace CupheadCoop
         private void CaptureLocalInputForUpload()
         {
             // On the client, the user is the only person at this PC. We map their LOCAL Player 1
-            // controls (whatever Rewired binds them to — keyboard or controller) onto the host's
-            // Player 2. This is the natural UX: client uses the most familiar controls.
+            // controls onto the host's Player 2. The gate patches in RewiredFocusGate would
+            // otherwise return zero for client-mode reads — we set IsCapturingLocalInput so our
+            // calls bypass the gate and see real keyboard state.
             var p1 = CoopState.LocalPlayer1;
             if (p1 == null) return;
 
-            uint buttons = 0;
-            // Iterate the action ids we care about. CupheadButton enum values 0..27 cover the
-            // gameplay surface; we just shovel them all in. (Action ids 0/1 are axes — bits will
-            // be ignored by the host's GetAxis postfix path.)
-            for (int actionId = 0; actionId < 28; actionId++)
+            CoopState.IsCapturingLocalInput = true;
+            try
             {
-                if (p1.GetButton(actionId)) buttons |= (1u << actionId);
+                uint buttons = 0;
+                for (int actionId = 0; actionId < 28; actionId++)
+                {
+                    if (p1.GetButton(actionId)) buttons |= (1u << actionId);
+                }
+                CoopState.LocalButtons = buttons;
+                CoopState.LocalAxisX = p1.GetAxis(0);
+                CoopState.LocalAxisY = p1.GetAxis(1);
             }
-
-            CoopState.LocalButtons = buttons;
-            CoopState.LocalAxisX = p1.GetAxis(0);
-            CoopState.LocalAxisY = p1.GetAxis(1);
+            finally
+            {
+                CoopState.IsCapturingLocalInput = false;
+            }
         }
     }
 }
