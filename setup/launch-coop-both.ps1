@@ -7,7 +7,7 @@
   Both launch in 800x600 windowed mode and are positioned side-by-side via a small
   delay between launches so the OS places them sequentially.
 
-  Use this instead of "launch via Steam, then launch via this script" — symmetric.
+  Use this instead of "launch via Steam, then launch via this script" -- symmetric.
 
   Original Steam steam_api64.dll backups (in case you want to revert to normal play):
     F:\SteamLibrary\steamapps\common\Cuphead\steam_api64.dll.steam_orig
@@ -45,7 +45,7 @@ Write-Host "Both windows started in $Width x ${Height} windowed mode."
 Write-Host "Drag them side-by-side, focus the host window, F9 to start hosting."
 Write-Host "Then focus the client window, F10 to connect."
 Write-Host ""
-Write-Host "Hotkeys (focused window only — alt-tab to switch which cup you control):"
+Write-Host "Hotkeys (focused window only -- alt-tab to switch which cup you control):"
 Write-Host "  F9   host"
 Write-Host "  F10  connect"
 Write-Host "  F11  disconnect"
