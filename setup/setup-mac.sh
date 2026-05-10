@@ -157,7 +157,7 @@ else
 fi
 xattr -dr com.apple.quarantine "$CUPHEAD_DIR/BepInEx/plugins/CupheadCoop" 2>/dev/null || true
 
-# 4. Pre-write the plugin config with the host IP and friendly defaults.
+# 4. Pre-write the plugin config with the host IP and sensible defaults.
 mkdir -p "$CUPHEAD_DIR/BepInEx/config"
 cat > "$CUPHEAD_DIR/BepInEx/config/leif.cupheadcoop.cfg" <<EOF
 ## CupheadCoop config — pre-seeded by setup-mac.sh.
