@@ -8,10 +8,16 @@ using UnityEngine;
 namespace CupheadCoop
 {
     [BepInPlugin(GUID, "Cuphead Co-op", Version)]
+    // Run our Update before any other MonoBehaviour's. Critical for input forwarding: if
+    // Cuphead's PlayerMotor.Update runs first, it reads actions.GetButtonDown BEFORE we've
+    // pumped network packets, so the just-arrived jump press is invisible to the motor.
+    // Next frame, AdvanceFrame has already moved Current → Previous so it never counts as
+    // "down" anymore. Symptom: client presses jump, host's P2 doesn't jump.
+    [DefaultExecutionOrder(-32000)]
     public class Plugin : BaseUnityPlugin
     {
         public const string GUID = "leif.cupheadcoop";
-        public const string Version = "0.7.5";
+        public const string Version = "0.7.6";
 
         private Harmony _harmony;
         private CoopHost _host;

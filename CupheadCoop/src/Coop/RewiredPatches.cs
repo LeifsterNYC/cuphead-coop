@@ -85,6 +85,7 @@ namespace CupheadCoop.Coop
             harmony.PatchAll(typeof(PlayerDamageReceiver_TakeDamage_Patch));
             harmony.PatchAll(typeof(PauseManager_Pause_Patch));
             harmony.PatchAll(typeof(PauseManager_Unpause_Patch));
+            harmony.PatchAll(typeof(AnimatorParamPatches));
         }
 
         private static bool ShouldOverride(Player __instance)

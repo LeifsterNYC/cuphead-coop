@@ -34,6 +34,14 @@ namespace CupheadCoop.Coop
         // Frame sequence applied. Used to detect stale inputs / log gaps.
         public static uint LastAppliedSequence;
 
+        // Bits that went 0→1 since the last AdvanceFrame, accumulated across all received
+        // packets within a single host frame. Lets IsButtonDown report a press even if multiple
+        // packets land in one frame (the latest-overwrite behavior of CurrentButtons would
+        // otherwise lose transient presses), and is order-independent — Cuphead's PlayerMotor
+        // can read it BEFORE or AFTER our network pump in any given frame and it still works.
+        public static uint PressedThisFrame;
+        private static uint _prevSeenButtons; // last raw buttons we received, for newly-down detection
+
         // Set true on the host once the client has connected and we've started receiving input frames.
         public static bool HasRemoteInput;
 
@@ -90,7 +98,11 @@ namespace CupheadCoop.Coop
         {
             if (actionId < 0 || actionId >= 32) return false;
             uint bit = 1u << actionId;
-            return (CurrentButtons & bit) != 0u && (PreviousButtons & bit) == 0u;
+            // A press reported by either: bits accumulated this frame from newly-arrived
+            // packets, OR the last-vs-current-frame transition (covers the case where the
+            // user is holding a button across many frames).
+            return ((PressedThisFrame & bit) != 0u)
+                || ((CurrentButtons & bit) != 0u && (PreviousButtons & bit) == 0u);
         }
 
         public static bool IsButtonUp(int actionId)
@@ -103,13 +115,20 @@ namespace CupheadCoop.Coop
         public static void AdvanceFrame()
         {
             PreviousButtons = CurrentButtons;
+            PressedThisFrame = 0;
         }
 
         public static void ApplyRemoteFrame(uint sequence, uint buttons, float axisX, float axisY)
         {
-            // Drop out-of-order packets. UDP can reorder.
             if (sequence != 0 && sequence <= LastAppliedSequence) return;
             LastAppliedSequence = sequence;
+
+            // Detect newly-pressed bits relative to the last raw packet seen. This catches
+            // transient presses that would otherwise be squashed by a same-frame second packet.
+            uint newlyPressed = buttons & ~_prevSeenButtons;
+            PressedThisFrame |= newlyPressed;
+            _prevSeenButtons = buttons;
+
             CurrentButtons = buttons;
             AxisX = Clamp(axisX, -1f, 1f);
             AxisY = Clamp(axisY, -1f, 1f);
