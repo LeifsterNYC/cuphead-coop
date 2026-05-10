@@ -12,7 +12,8 @@ namespace CupheadCoop.Net
         // v1 = M3 input streaming only (host runs sim, client uploads inputs)
         // v2 = M4 added StateSnapshot (host streams P1/P2 positions back to client)
         // v3 = M5 PlayerSnapshot extended with animator state hash + normalized time
-        public const int Version = 3;
+        // v4 = M6 StateSnapshot now carries an entity array (boss + scene actors)
+        public const int Version = 4;
     }
 
     internal enum PacketType : byte
@@ -140,16 +141,59 @@ namespace CupheadCoop.Net
     }
 
     /// <summary>
+    /// Per-entity slice (M6): scene actor identified by FNV1a32 of its scene/path. Carries
+    /// transform + animator state. Spawned-at-runtime objects aren't included by the host's
+    /// capture path in v1, so this slice mirrors scene-loaded entities only.
+    /// </summary>
+    internal struct EntitySnapshot
+    {
+        public uint PathHash;
+        public float X;
+        public float Y;
+        public float ScaleX;
+        public float ScaleY;
+        public int AnimStateHash;
+        public float AnimNormalizedTime;
+
+        public void Write(NetDataWriter w)
+        {
+            w.Put(PathHash);
+            w.Put(X);
+            w.Put(Y);
+            w.Put(ScaleX);
+            w.Put(ScaleY);
+            w.Put(AnimStateHash);
+            w.Put(AnimNormalizedTime);
+        }
+
+        public static EntitySnapshot Read(NetDataReader r)
+        {
+            return new EntitySnapshot
+            {
+                PathHash = r.GetUInt(),
+                X = r.GetFloat(),
+                Y = r.GetFloat(),
+                ScaleX = r.GetFloat(),
+                ScaleY = r.GetFloat(),
+                AnimStateHash = r.GetInt(),
+                AnimNormalizedTime = r.GetFloat()
+            };
+        }
+    }
+
+    /// <summary>
     /// Host -> client world-state packet. Sent at <see cref="ModConfig.StateSendRateHz"/> Hz over an
     /// unreliable+sequenced channel: stale packets are dropped by the client based on Sequence,
     /// and lost packets just cause one missed interpolation frame, which is fine.
     /// </summary>
     internal struct StateSnapshot
     {
-        public uint Sequence;     // monotonic; client drops out-of-order packets
-        public ushort HostTickMs; // host's wall-clock ms mod 65536, used for interpolation timing
+        public uint Sequence;
+        public ushort HostTickMs;
         public PlayerSnapshot P1;
         public PlayerSnapshot P2;
+        public byte EntityCount;          // <= EntitySync.MaxSyncedEntities
+        public EntitySnapshot[] Entities; // length == EntityCount
 
         public void Write(NetDataWriter w)
         {
@@ -158,17 +202,23 @@ namespace CupheadCoop.Net
             w.Put(HostTickMs);
             P1.Write(w);
             P2.Write(w);
+            w.Put(EntityCount);
+            for (int i = 0; i < EntityCount; i++) Entities[i].Write(w);
         }
 
         public static StateSnapshot Read(NetDataReader r)
         {
-            return new StateSnapshot
+            var s = new StateSnapshot
             {
                 Sequence = r.GetUInt(),
                 HostTickMs = r.GetUShort(),
                 P1 = PlayerSnapshot.Read(r),
-                P2 = PlayerSnapshot.Read(r)
+                P2 = PlayerSnapshot.Read(r),
+                EntityCount = r.GetByte()
             };
+            s.Entities = s.EntityCount > 0 ? new EntitySnapshot[s.EntityCount] : null;
+            for (int i = 0; i < s.EntityCount; i++) s.Entities[i] = EntitySnapshot.Read(r);
+            return s;
         }
     }
 }

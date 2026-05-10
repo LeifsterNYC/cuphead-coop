@@ -1,4 +1,5 @@
 using System;
+using CupheadCoop.Net;
 
 namespace CupheadCoop.Coop
 {
@@ -58,6 +59,10 @@ namespace CupheadCoop.Coop
         public static sbyte RemoteP2Facing;
         public static int RemoteP2AnimHash;
         public static float RemoteP2AnimTime;
+
+        // M6 entity sync. Fixed-size buffer to avoid GC churn; RemoteEntityCount tracks valid slots.
+        public static readonly EntitySnapshot[] RemoteEntities = new EntitySnapshot[EntitySync.MaxSyncedEntities];
+        public static int RemoteEntityCount;
 
         public static bool IsButtonHeld(int actionId)
         {
@@ -121,6 +126,7 @@ namespace CupheadCoop.Coop
             RemoteP2Facing = 0;
             RemoteP2AnimHash = 0;
             RemoteP2AnimTime = 0f;
+            RemoteEntityCount = 0;
         }
 
         /// <summary>
@@ -128,7 +134,8 @@ namespace CupheadCoop.Coop
         /// </summary>
         public static void ApplyRemoteState(uint sequence,
                                             bool p1Present, float p1X, float p1Y, sbyte p1Facing, int p1Anim, float p1AnimT,
-                                            bool p2Present, float p2X, float p2Y, sbyte p2Facing, int p2Anim, float p2AnimT)
+                                            bool p2Present, float p2X, float p2Y, sbyte p2Facing, int p2Anim, float p2AnimT,
+                                            EntitySnapshot[] entities, int entityCount)
         {
             if (sequence != 0 && sequence <= RemoteStateSequence) return;
             RemoteStateSequence = sequence;
@@ -144,6 +151,13 @@ namespace CupheadCoop.Coop
             RemoteP2Facing = p2Facing;
             RemoteP2AnimHash = p2Anim;
             RemoteP2AnimTime = p2AnimT;
+
+            // Copy entities into our pre-allocated buffer to avoid retaining the network-side
+            // array (which gets recycled by LiteNetLib).
+            int n = entityCount;
+            if (n > RemoteEntities.Length) n = RemoteEntities.Length;
+            for (int i = 0; i < n; i++) RemoteEntities[i] = entities[i];
+            RemoteEntityCount = n;
         }
 
         private static float Clamp(float v, float min, float max)

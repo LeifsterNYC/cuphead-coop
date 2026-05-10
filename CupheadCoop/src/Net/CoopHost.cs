@@ -74,6 +74,8 @@ namespace CupheadCoop.Net
             _stateAccum = 0f;
 
             _stateSeq++;
+            int entityCount;
+            EntitySync.CaptureForHost(out entityCount);
             var snap = new StateSnapshot
             {
                 Sequence = _stateSeq,
@@ -95,7 +97,9 @@ namespace CupheadCoop.Net
                     Facing = ScenePuppetry.LocalP2Facing,
                     AnimStateHash = ScenePuppetry.LocalP2AnimHash,
                     AnimNormalizedTime = ScenePuppetry.LocalP2AnimTime
-                }
+                },
+                EntityCount = (byte)entityCount,
+                Entities = EntitySync.HostBuffer
             };
 
             var w = new NetDataWriter();
