@@ -81,6 +81,21 @@ The `.csproj` auto-detects Cuphead at `F:\SteamLibrary\steamapps\common\Cuphead`
 
 Targets `net35` to match Cuphead's Unity Mono runtime. LiteNetLib `0.9.5.2` is the last version with a `net35` build target — don't bump it without retargeting the framework.
 
+## Single-PC dev testing
+
+Without a second machine and Steam account, you can still exercise the full network stack with the mock client:
+
+```sh
+# terminal 1: real Cuphead with the plugin, F9 in local 2-player co-op
+# terminal 2:
+dotnet run --project tools/MockClient                              # localhost defaults, walk-right pattern
+dotnet run --project tools/MockClient -- 127.0.0.1 47777 cuphead-coop-v0 jump
+```
+
+The mock client handshakes like a real client, streams synthetic input at 60 Hz (walk-right / walk-left / jump / idle), and prints back the `StateSnapshot` packets the host streams it. P2's cup will move on the host's screen; the printed snapshots prove M4 round-trip.
+
+For a no-networking diagnostic, set `[Debug] ForceP2WalkRight = true` in the cfg and restart Cuphead — Player 2 auto-walks right, confirming the Harmony patches landed.
+
 ## How it works
 
 - **Input intercept:** Harmony postfixes `Rewired.Player.GetButton/GetButtonDown/GetButtonUp/GetAxis(int)`. When `Mode == Host` and a remote frame is buffered, the result for Cuphead's Player 2 is replaced with the network value. Cuphead's `PlayerInput` delegates to `Rewired.Player` for everything, so patching at the Rewired layer is enough.
