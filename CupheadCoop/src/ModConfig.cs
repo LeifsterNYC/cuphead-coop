@@ -15,6 +15,7 @@ namespace CupheadCoop
 
         public static ConfigEntry<int> InputSendRateHz;
         public static ConfigEntry<int> InputBufferFrames;
+        public static ConfigEntry<int> StateSendRateHz;
 
         public static ConfigEntry<bool> DebugForceP2WalkRight;
         public static ConfigEntry<bool> Verbose;
@@ -39,6 +40,8 @@ namespace CupheadCoop
                 "How often the client sends its input snapshot to the host.");
             InputBufferFrames = cfg.Bind("Input", "BufferFrames", 2,
                 "Frames of jitter buffer on the host before applying network input. 1 = lowest latency, 3+ = smoother under jitter.");
+            StateSendRateHz = cfg.Bind("State", "SendRateHz", 30,
+                "How often the host sends a world-state snapshot (P1/P2 transforms) to the client. 30 Hz is a good balance for LAN; bump to 60 if jitter is visible.");
 
             DebugForceP2WalkRight = cfg.Bind("Debug", "ForceP2WalkRight", false,
                 "If true, with no active session, forces Player 2's MoveHorizontal axis to +1.0. Used to verify the input intercept works without networking.");

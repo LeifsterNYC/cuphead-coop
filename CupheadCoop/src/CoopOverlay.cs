@@ -50,14 +50,42 @@ namespace CupheadCoop
             string line1 = "CupheadCoop v" + Plugin.Version + "  mode=" + mode + forced;
             string line2 = "rewired p1=" + p1 + " p2=" + p2 + "   net=" + remote +
                           " seq=" + seq + " btns=" + btns + " axes=" + ax;
+            // Line 3: M4 visual sync. Host: what we last sampled. Client: what we last received.
+            string line3;
+            if (CoopState.Mode == CoopMode.Host)
+            {
+                string hp1 = ScenePuppetry.LocalP1Present
+                    ? ScenePuppetry.LocalP1X.ToString("0.0") + "," + ScenePuppetry.LocalP1Y.ToString("0.0")
+                    : "-";
+                string hp2 = ScenePuppetry.LocalP2Present
+                    ? ScenePuppetry.LocalP2X.ToString("0.0") + "," + ScenePuppetry.LocalP2Y.ToString("0.0")
+                    : "-";
+                line3 = "tx state p1=" + hp1 + " p2=" + hp2;
+            }
+            else if (CoopState.Mode == CoopMode.Client)
+            {
+                string cp1 = CoopState.RemoteP1Present
+                    ? CoopState.RemoteP1X.ToString("0.0") + "," + CoopState.RemoteP1Y.ToString("0.0")
+                    : "-";
+                string cp2 = CoopState.RemoteP2Present
+                    ? CoopState.RemoteP2X.ToString("0.0") + "," + CoopState.RemoteP2Y.ToString("0.0")
+                    : "-";
+                line3 = "rx state seq=" + CoopState.RemoteStateSequence + " p1=" + cp1 + " p2=" + cp2;
+            }
+            else
+            {
+                line3 = "";
+            }
 
             const float pad = 8f;
             const float w = 520f;
-            float h = 36f;
+            float h = string.IsNullOrEmpty(line3) ? 36f : 52f;
             var rect = new Rect(pad, pad, w, h);
             GUI.Box(rect, GUIContent.none, _bgStyle);
             GUI.Label(new Rect(rect.x, rect.y, w, 18), line1, _style);
             GUI.Label(new Rect(rect.x, rect.y + 16, w, 18), line2, _style);
+            if (!string.IsNullOrEmpty(line3))
+                GUI.Label(new Rect(rect.x, rect.y + 32, w, 18), line3, _style);
         }
     }
 }

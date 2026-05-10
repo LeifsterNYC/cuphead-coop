@@ -42,6 +42,19 @@ namespace CupheadCoop.Coop
         public static float LocalAxisY;
         public static uint LocalSequence;
 
+        // M4: latest world-state snapshot received from the host. Used by ScenePuppetry on the
+        // client to override the local Cuphead transforms each frame. Sequence is kept so we can
+        // drop out-of-order UDP packets and so the overlay can show "is the host still streaming?".
+        public static uint RemoteStateSequence;
+        public static bool RemoteP1Present;
+        public static float RemoteP1X;
+        public static float RemoteP1Y;
+        public static sbyte RemoteP1Facing;
+        public static bool RemoteP2Present;
+        public static float RemoteP2X;
+        public static float RemoteP2Y;
+        public static sbyte RemoteP2Facing;
+
         public static bool IsButtonHeld(int actionId)
         {
             if (actionId < 0 || actionId >= 32) return false;
@@ -91,6 +104,33 @@ namespace CupheadCoop.Coop
             LocalAxisX = 0f;
             LocalAxisY = 0f;
             LocalSequence = 0;
+            RemoteStateSequence = 0;
+            RemoteP1Present = false;
+            RemoteP1X = 0f;
+            RemoteP1Y = 0f;
+            RemoteP1Facing = 0;
+            RemoteP2Present = false;
+            RemoteP2X = 0f;
+            RemoteP2Y = 0f;
+            RemoteP2Facing = 0;
+        }
+
+        /// <summary>
+        /// Apply a host-streamed world snapshot. Out-of-order packets are dropped on the floor.
+        /// </summary>
+        public static void ApplyRemoteState(uint sequence, bool p1Present, float p1X, float p1Y, sbyte p1Facing,
+                                            bool p2Present, float p2X, float p2Y, sbyte p2Facing)
+        {
+            if (sequence != 0 && sequence <= RemoteStateSequence) return;
+            RemoteStateSequence = sequence;
+            RemoteP1Present = p1Present;
+            RemoteP1X = p1X;
+            RemoteP1Y = p1Y;
+            RemoteP1Facing = p1Facing;
+            RemoteP2Present = p2Present;
+            RemoteP2X = p2X;
+            RemoteP2Y = p2Y;
+            RemoteP2Facing = p2Facing;
         }
 
         private static float Clamp(float v, float min, float max)

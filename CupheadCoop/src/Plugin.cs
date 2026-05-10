@@ -22,6 +22,7 @@ namespace CupheadCoop
         {
             ModConfig.Bind(Config);
             PlayerInputInit_Patch.Log = Logger;
+            ScenePuppetry.Log = Logger;
 
             Logger.LogInfo("CupheadCoop " + Version + " loading…");
 
@@ -65,6 +66,20 @@ namespace CupheadCoop
 
         private void LateUpdate()
         {
+            // M4 visual sync runs in LateUpdate — after Cuphead's own Update has moved players.
+            // Host: sample P1/P2 transforms now, then ship via the network pump.
+            // Client: overwrite local transforms with the host's last-received snapshot so the
+            // rendered frame matches what the host sees.
+            if (CoopState.Mode == CoopMode.Host)
+            {
+                ScenePuppetry.HostCapture();
+                _host?.TickStateSnapshot(Time.unscaledDeltaTime);
+            }
+            else if (CoopState.Mode == CoopMode.Client)
+            {
+                ScenePuppetry.ClientApply();
+            }
+
             // Edge detection lives in CoopState — snapshot at end of frame so next frame's
             // GetButtonDown/Up postfixes can compute deltas.
             CoopState.AdvanceFrame();

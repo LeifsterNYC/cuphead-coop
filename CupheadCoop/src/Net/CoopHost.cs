@@ -16,6 +16,11 @@ namespace CupheadCoop.Net
         private NetManager _net;
         private NetPeer _client;
 
+        // M4 snapshot pacing
+        private float _stateAccum;
+        private uint _stateSeq;
+        private readonly System.Diagnostics.Stopwatch _hostClock = System.Diagnostics.Stopwatch.StartNew();
+
         public bool Running => _net != null && _net.IsRunning;
 
         public CoopHost(ManualLogSource log) { _log = log; }
@@ -48,6 +53,54 @@ namespace CupheadCoop.Net
         public void Pump()
         {
             if (_net != null) _net.PollEvents();
+        }
+
+        /// <summary>
+        /// Called from <c>Plugin.LateUpdate</c> after <c>ScenePuppetry.HostCapture</c> has sampled
+        /// live transforms. Sends an unreliable+sequenced StateSnapshot to the connected peer at
+        /// the configured rate. No-ops if no peer is connected.
+        /// </summary>
+        public void TickStateSnapshot(float dt)
+        {
+            if (_client == null || _client.ConnectionState != ConnectionState.Connected) return;
+
+            int rate = ModConfig.StateSendRateHz.Value;
+            if (rate < 5) rate = 5;
+            if (rate > 120) rate = 120;
+            float interval = 1f / rate;
+
+            _stateAccum += dt;
+            if (_stateAccum < interval) return;
+            _stateAccum = 0f;
+
+            _stateSeq++;
+            var snap = new StateSnapshot
+            {
+                Sequence = _stateSeq,
+                HostTickMs = (ushort)(_hostClock.ElapsedMilliseconds & 0xFFFF),
+                P1 = new PlayerSnapshot
+                {
+                    Present = ScenePuppetry.LocalP1Present,
+                    X = ScenePuppetry.LocalP1X,
+                    Y = ScenePuppetry.LocalP1Y,
+                    Facing = ScenePuppetry.LocalP1Facing
+                },
+                P2 = new PlayerSnapshot
+                {
+                    Present = ScenePuppetry.LocalP2Present,
+                    X = ScenePuppetry.LocalP2X,
+                    Y = ScenePuppetry.LocalP2Y,
+                    Facing = ScenePuppetry.LocalP2Facing
+                }
+            };
+
+            var w = new NetDataWriter();
+            snap.Write(w);
+            _client.Send(w, DeliveryMethod.Sequenced);
+
+            if (ModConfig.Verbose.Value)
+                _log.LogDebug("tx state seq=" + _stateSeq + " p1=" + (snap.P1.Present ? snap.P1.X.ToString("F2") + "," + snap.P1.Y.ToString("F2") : "-") +
+                              " p2=" + (snap.P2.Present ? snap.P2.X.ToString("F2") + "," + snap.P2.Y.ToString("F2") : "-"));
         }
 
         public void OnConnectionRequest(ConnectionRequest request)
