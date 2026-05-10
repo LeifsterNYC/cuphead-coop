@@ -36,19 +36,30 @@ $argList   = @("-screen-fullscreen", "0", "-screen-width", "$Width", "-screen-he
 if (-not (Test-Path $hostExe))   { Write-Error "Host Cuphead.exe not found at $hostExe";     exit 1 }
 if (-not (Test-Path $clientExe)) { Write-Error "Client Cuphead.exe not found at $clientExe"; exit 1 }
 
-function Wait-And-Position {
-    param([System.Diagnostics.Process]$proc, [int]$x, [int]$y, [int]$w, [int]$h)
-    # Wait up to 15s for the window handle to appear (Cuphead's splash + Unity load take a few seconds).
-    for ($i = 0; $i -lt 150; $i++) {
-        $proc.Refresh()
-        if ($proc.MainWindowHandle -ne [IntPtr]::Zero) {
-            Start-Sleep -Milliseconds 200   # let Unity finish setting initial size
-            [void][Win32.User32]::SetWindowPos($proc.MainWindowHandle, [IntPtr]::Zero, $x, $y, $w, $h, 0x0040)  # SWP_SHOWWINDOW
-            return $true
+function Start-PersistentReposition {
+    # Re-applies SetWindowPos every 500ms for 15s in a background runspace, so the position
+    # sticks regardless of when Unity finishes its own startup window-init (which can override
+    # whatever we set if we only call once). Using SWP_NOZORDER | SWP_NOACTIVATE so we don't
+    # steal focus or rearrange Z-order each tick.
+    param([int]$pid_, [int]$x, [int]$y, [int]$w, [int]$h)
+    $script = {
+        param($pid_, $x, $y, $w, $h)
+        Add-Type -Namespace Win32 -Name User32 -MemberDefinition @"
+[DllImport("user32.dll")]
+public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+"@
+        $deadline = (Get-Date).AddSeconds(15)
+        while ((Get-Date) -lt $deadline) {
+            try {
+                $p = Get-Process -Id $pid_ -ErrorAction Stop
+                if ($p.MainWindowHandle -ne [IntPtr]::Zero) {
+                    [void][Win32.User32]::SetWindowPos($p.MainWindowHandle, [IntPtr]::Zero, $x, $y, $w, $h, 0x0014)  # SWP_NOZORDER | SWP_NOACTIVATE
+                }
+            } catch { return }
+            Start-Sleep -Milliseconds 500
         }
-        Start-Sleep -Milliseconds 100
     }
-    return $false
+    Start-Job -ScriptBlock $script -ArgumentList $pid_, $x, $y, $w, $h | Out-Null
 }
 
 Write-Host "Launching host instance ($Width x $Height)..."
@@ -57,17 +68,16 @@ Start-Sleep -Milliseconds 1500
 Write-Host "Launching client instance ($Width x $Height)..."
 $clientProc = Start-Process -FilePath $clientExe -WorkingDirectory (Split-Path $clientExe) -ArgumentList $argList -PassThru
 
-# Position once both windows have rendered.
+# Position both via background reposition jobs that re-apply SetWindowPos for 15s so the
+# positions stick even if Unity's own window-init code runs after our first call.
 $gap = 20
 $hostX   = 50
 $clientX = $hostX + $Width + $gap
 $y       = 50
 
-if (Wait-And-Position $hostProc   $hostX   $y $Width $Height) { Write-Host "[ok] host positioned at ($hostX,$y)" }
-else { Write-Warning "Host window handle never appeared; you'll have to position it manually." }
-
-if (Wait-And-Position $clientProc $clientX $y $Width $Height) { Write-Host "[ok] client positioned at ($clientX,$y)" }
-else { Write-Warning "Client window handle never appeared; you'll have to position it manually." }
+Start-PersistentReposition -pid_ $hostProc.Id   -x $hostX   -y $y -w $Width -h $Height
+Start-PersistentReposition -pid_ $clientProc.Id -x $clientX -y $y -w $Width -h $Height
+Write-Host "[ok] reposition jobs running for 15s; windows should snap into place once Unity finishes loading"
 
 Write-Host ""
 Write-Host "Both Cuphead windows running. Focus the one you want input to go to."
