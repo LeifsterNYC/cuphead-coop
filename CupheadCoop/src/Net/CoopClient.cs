@@ -25,19 +25,31 @@ namespace CupheadCoop.Net
 
         public bool Start(string host, int port, string connectKey)
         {
-            _net = new NetManager(this);
-            _net.UnconnectedMessagesEnabled = false;
-            _net.UpdateTime = 15;
-            if (!_net.Start())
+            try
             {
-                _log.LogError("CoopClient: failed to start NetManager");
-                _net = null;
+                _net = new NetManager(this);
+                _net.UnconnectedMessagesEnabled = false;
+                _net.UpdateTime = 15;
+                if (!_net.Start())
+                {
+                    _log.LogError("CoopClient: failed to start NetManager");
+                    _net = null;
+                    return false;
+                }
+                _log.LogInfo("CoopClient: NetManager started, dialing " + host + ":" + port + " (key='" + connectKey + "')");
+                _peer = _net.Connect(host, port, connectKey);
+                CoopState.Mode = CoopMode.Client;
+                _log.LogInfo("CoopClient: Connect() returned, peer=" + (_peer != null ? _peer.EndPoint?.ToString() : "null"));
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _log.LogError("CoopClient: Start failed with exception: " + ex.GetType().Name + ": " + ex.Message + "\n" + ex.StackTrace);
+                if (_net != null) { try { _net.Stop(); } catch { } _net = null; }
+                _peer = null;
+                CoopState.Reset();
                 return false;
             }
-            _peer = _net.Connect(host, port, connectKey);
-            CoopState.Mode = CoopMode.Client;
-            _log.LogInfo("CoopClient: dialing " + host + ":" + port);
-            return true;
         }
 
         public void Stop()

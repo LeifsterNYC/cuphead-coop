@@ -1,24 +1,38 @@
+using System.Collections.Generic;
+using BepInEx.Logging;
 using CupheadCoop.Coop;
 using UnityEngine;
 
 namespace CupheadCoop
 {
     /// <summary>
-    /// Tiny top-left IMGUI status panel so the tester can see at a glance whether the mod is live,
-    /// whether discovery worked, and whether input is flowing. Invisible when nothing interesting
-    /// is happening (Off mode + no debug flag).
+    /// Top-left IMGUI status panel + recent-events tail. Always visible while the plugin is loaded
+    /// so the tester gets immediate visual feedback (mode, Rewired discovery, hotkey presses,
+    /// network handshake) without alt-tabbing to read LogOutput.log.
+    ///
+    /// The events tail is fed by <see cref="LogTap"/> which subscribes to BepInEx's log events
+    /// and keeps the last N lines in a ring buffer.
     /// </summary>
     internal class CoopOverlay : MonoBehaviour
     {
         private GUIStyle _style;
         private GUIStyle _bgStyle;
         private Texture2D _bgTex;
+        // Visibility toggled by ModConfig.KeyToggleOverlay. Defaults to visible so a fresh
+        // launch shows feedback immediately; once the tester knows the layout they can hide it.
+        public static bool Visible = true;
+
+        private void Update()
+        {
+            if (Input.GetKeyDown(ModConfig.KeyToggleOverlay.Value))
+                Visible = !Visible;
+        }
 
         private void EnsureStyles()
         {
             if (_style != null) return;
             _bgTex = new Texture2D(1, 1);
-            _bgTex.SetPixel(0, 0, new Color(0f, 0f, 0f, 0.55f));
+            _bgTex.SetPixel(0, 0, new Color(0f, 0f, 0f, 0.7f));
             _bgTex.Apply();
             _bgStyle = new GUIStyle { normal = { background = _bgTex } };
             _style = new GUIStyle
@@ -32,10 +46,7 @@ namespace CupheadCoop
 
         private void OnGUI()
         {
-            // Don't render anything until we have something to say.
-            bool active = CoopState.Mode != CoopMode.Off || ModConfig.DebugForceP2WalkRight.Value;
-            if (!active) return;
-
+            if (!Visible) return;
             EnsureStyles();
 
             string mode = CoopState.Mode.ToString();
@@ -47,11 +58,13 @@ namespace CupheadCoop
             string ax = CoopState.AxisX.ToString("0.00") + "," + CoopState.AxisY.ToString("0.00");
             string forced = ModConfig.DebugForceP2WalkRight.Value ? "  [DEBUG: P2 walks right]" : "";
 
-            string line1 = "CupheadCoop v" + Plugin.Version + "  mode=" + mode + forced;
+            string line1 = "CupheadCoop v" + Plugin.Version + "  mode=" + mode +
+                           "  hotkeys: host=" + ModConfig.KeyHost.Value + " connect=" + ModConfig.KeyConnect.Value +
+                           " disc=" + ModConfig.KeyDisconnect.Value + " hide=" + ModConfig.KeyToggleOverlay.Value + forced;
             string line2 = "rewired p1=" + p1 + " p2=" + p2 + "   net=" + remote +
                           " seq=" + seq + " btns=" + btns + " axes=" + ax;
             // Line 3: M4 visual sync. Host: what we last sampled. Client: what we last received.
-            string line3;
+            string line3 = null;
             if (CoopState.Mode == CoopMode.Host)
             {
                 string hp1 = ScenePuppetry.LocalP1Present
@@ -72,20 +85,68 @@ namespace CupheadCoop
                     : "-";
                 line3 = "rx state seq=" + CoopState.RemoteStateSequence + " p1=" + cp1 + " p2=" + cp2;
             }
-            else
-            {
-                line3 = "";
-            }
+
+            // Line 4+: tail of recent BepInEx log events. Capped to LogTap.MaxLines.
+            var tail = LogTap.GetSnapshot();
 
             const float pad = 8f;
-            const float w = 520f;
-            float h = string.IsNullOrEmpty(line3) ? 36f : 52f;
+            const float w = 640f;
+            const float lineH = 16f;
+            int header = 2 + (line3 != null ? 1 : 0);
+            int totalLines = header + tail.Count;
+            float h = totalLines * lineH + 8f;
             var rect = new Rect(pad, pad, w, h);
             GUI.Box(rect, GUIContent.none, _bgStyle);
-            GUI.Label(new Rect(rect.x, rect.y, w, 18), line1, _style);
-            GUI.Label(new Rect(rect.x, rect.y + 16, w, 18), line2, _style);
-            if (!string.IsNullOrEmpty(line3))
-                GUI.Label(new Rect(rect.x, rect.y + 32, w, 18), line3, _style);
+
+            float y = rect.y + 2f;
+            GUI.Label(new Rect(rect.x, y, w, lineH + 2), line1, _style); y += lineH;
+            GUI.Label(new Rect(rect.x, y, w, lineH + 2), line2, _style); y += lineH;
+            if (line3 != null) { GUI.Label(new Rect(rect.x, y, w, lineH + 2), line3, _style); y += lineH; }
+            for (int i = 0; i < tail.Count; i++, y += lineH)
+                GUI.Label(new Rect(rect.x, y, w, lineH + 2), tail[i], _style);
+        }
+    }
+
+    /// <summary>
+    /// Subscribes to BepInEx log events and keeps the last <see cref="MaxLines"/> messages in a
+    /// ring buffer for the overlay to display. Initialised once from <see cref="Plugin.Awake"/>.
+    /// </summary>
+    internal static class LogTap
+    {
+        public const int MaxLines = 8;
+        private static readonly Queue<string> _buf = new Queue<string>();
+        private static readonly object _lock = new object();
+        private static bool _wired;
+
+        public static void Wire()
+        {
+            if (_wired) return;
+            _wired = true;
+            BepInEx.Logging.Logger.Listeners.Add(new TailListener());
+        }
+
+        public static List<string> GetSnapshot()
+        {
+            lock (_lock) return new List<string>(_buf);
+        }
+
+        private class TailListener : ILogListener
+        {
+            public LogLevel LogLevelFilter => LogLevel.All;
+            public void LogEvent(object sender, LogEventArgs eventArgs)
+            {
+                // Only mirror our own plugin's lines into the in-game tail; BepInEx infra noise
+                // (chainloader bootstrap, harmonyx warnings) belongs only in the disk log.
+                var src = eventArgs.Source?.SourceName;
+                if (src != "Cuphead Co-op") return;
+                string line = "[" + eventArgs.Level.ToString().Substring(0, 1) + "] " + eventArgs.Data;
+                lock (_lock)
+                {
+                    if (_buf.Count >= MaxLines) _buf.Dequeue();
+                    _buf.Enqueue(line);
+                }
+            }
+            public void Dispose() { }
         }
     }
 }

@@ -23,6 +23,7 @@ namespace CupheadCoop
             ModConfig.Bind(Config);
             PlayerInputInit_Patch.Log = Logger;
             ScenePuppetry.Log = Logger;
+            LogTap.Wire();
 
             Logger.LogInfo("CupheadCoop " + Version + " loading…");
 
@@ -87,9 +88,21 @@ namespace CupheadCoop
 
         private void HandleHotkeys()
         {
-            if (Input.GetKeyDown(ModConfig.KeyHost.Value)) ToggleHost();
-            if (Input.GetKeyDown(ModConfig.KeyConnect.Value)) ToggleClient();
-            if (Input.GetKeyDown(ModConfig.KeyDisconnect.Value)) Disconnect();
+            if (Input.GetKeyDown(ModConfig.KeyHost.Value))
+            {
+                Logger.LogInfo("Hotkey: Host (" + ModConfig.KeyHost.Value + ") pressed");
+                ToggleHost();
+            }
+            if (Input.GetKeyDown(ModConfig.KeyConnect.Value))
+            {
+                Logger.LogInfo("Hotkey: Connect (" + ModConfig.KeyConnect.Value + ") pressed");
+                ToggleClient();
+            }
+            if (Input.GetKeyDown(ModConfig.KeyDisconnect.Value))
+            {
+                Logger.LogInfo("Hotkey: Disconnect (" + ModConfig.KeyDisconnect.Value + ") pressed");
+                Disconnect();
+            }
         }
 
         private void ToggleHost()

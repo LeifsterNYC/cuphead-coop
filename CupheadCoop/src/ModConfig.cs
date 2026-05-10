@@ -8,6 +8,7 @@ namespace CupheadCoop
         public static ConfigEntry<KeyCode> KeyHost;
         public static ConfigEntry<KeyCode> KeyConnect;
         public static ConfigEntry<KeyCode> KeyDisconnect;
+        public static ConfigEntry<KeyCode> KeyToggleOverlay;
 
         public static ConfigEntry<string> RemoteHost;
         public static ConfigEntry<int> Port;
@@ -28,6 +29,8 @@ namespace CupheadCoop
                 "Connect to the configured RemoteHost:Port as the second-player client.");
             KeyDisconnect = cfg.Bind("Hotkeys", "Disconnect", KeyCode.F11,
                 "Tear down the current host or client session.");
+            KeyToggleOverlay = cfg.Bind("Hotkeys", "ToggleOverlay", KeyCode.O,
+                "Show/hide the in-game CupheadCoop status overlay (default O).");
 
             RemoteHost = cfg.Bind("Network", "RemoteHost", "127.0.0.1",
                 "IPv4 address of the host. LAN: use the host PC's local IP.");
