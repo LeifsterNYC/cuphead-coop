@@ -30,6 +30,7 @@ namespace CupheadCoop
         public static ConfigEntry<bool> EnableHpSync;
         public static ConfigEntry<bool> EnablePauseSync;
         public static ConfigEntry<bool> EnableSceneSync;
+        public static ConfigEntry<bool> FocusGateInput;
 
         public static void Bind(ConfigFile cfg)
         {
@@ -75,6 +76,8 @@ namespace CupheadCoop
                 "Host's pause state freezes the client. Disable to confirm pause-related freezes aren't from us.");
             EnableSceneSync = cfg.Bind("Sync", "EnableSceneSync", true,
                 "Client auto-LoadScene's to host's active scene. Disable if menu navigation is producing infinite loops or wrong scene loads.");
+            FocusGateInput = cfg.Bind("Sync", "FocusGateInput", true,
+                "Suppress all Rewired input reads when this Cuphead window doesn't have focus. Required when running two instances on the same PC for solo testing — without this, both windows read the same keyboard simultaneously and every keypress moves both cups. Harmless to leave on for normal multi-PC play.");
         }
     }
 }

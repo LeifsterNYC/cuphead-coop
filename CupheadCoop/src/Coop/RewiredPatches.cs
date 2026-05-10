@@ -1,8 +1,55 @@
 using HarmonyLib;
 using Rewired;
+using UnityEngine;
 
 namespace CupheadCoop.Coop
 {
+    /// <summary>
+    /// Solo-testing input-bleed fix. When two Cuphead instances run on one PC sharing a
+    /// keyboard, both windows' Rewired input subsystems read the same keypresses regardless
+    /// of which window is focused — every press moves the cup in BOTH games. Gating Rewired's
+    /// per-call reads on <c>Application.isFocused</c> means only the focused window processes
+    /// input, so the user can alt-tab between host and client to switch which cup they control.
+    ///
+    /// Harmless on multi-PC setups since Cuphead is always focused on its own machine. Can be
+    /// disabled via <c>[Sync] FocusGateInput</c> in the cfg if it ever interferes.
+    /// </summary>
+    [HarmonyPatch]
+    internal static class RewiredFocusGate
+    {
+        [HarmonyPatch(typeof(Player), nameof(Player.GetButton), new[] { typeof(int) })]
+        [HarmonyPrefix]
+        private static bool GetButton_Prefix(ref bool __result)
+        {
+            if (!ModConfig.FocusGateInput.Value || Application.isFocused) return true;
+            __result = false; return false;
+        }
+
+        [HarmonyPatch(typeof(Player), nameof(Player.GetButtonDown), new[] { typeof(int) })]
+        [HarmonyPrefix]
+        private static bool GetButtonDown_Prefix(ref bool __result)
+        {
+            if (!ModConfig.FocusGateInput.Value || Application.isFocused) return true;
+            __result = false; return false;
+        }
+
+        [HarmonyPatch(typeof(Player), nameof(Player.GetButtonUp), new[] { typeof(int) })]
+        [HarmonyPrefix]
+        private static bool GetButtonUp_Prefix(ref bool __result)
+        {
+            if (!ModConfig.FocusGateInput.Value || Application.isFocused) return true;
+            __result = false; return false;
+        }
+
+        [HarmonyPatch(typeof(Player), nameof(Player.GetAxis), new[] { typeof(int) })]
+        [HarmonyPrefix]
+        private static bool GetAxis_Prefix(ref float __result)
+        {
+            if (!ModConfig.FocusGateInput.Value || Application.isFocused) return true;
+            __result = 0f; return false;
+        }
+    }
+
     /// <summary>
     /// Patches Rewired.Player.GetButton/GetButtonDown/GetButtonUp/GetAxis so that, when the
     /// instance corresponds to Cuphead's Player 2 AND we have a remote input source active,
@@ -15,6 +62,7 @@ namespace CupheadCoop.Coop
     {
         public static void Apply(Harmony harmony)
         {
+            harmony.PatchAll(typeof(RewiredFocusGate));
             harmony.PatchAll(typeof(RewiredPatches));
             harmony.PatchAll(typeof(PlayerInputInit_Patch));
             harmony.PatchAll(typeof(NatPunchModule_SkipCtor_Patch));
