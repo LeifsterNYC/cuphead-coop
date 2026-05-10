@@ -55,6 +55,12 @@ namespace CupheadCoop.Coop
         // Diagnostic counters surfaced by the in-game overlay.
         public static int LastCapturedCount;
         public static int CacheSize => _byPath.Count;
+        // Client-side: counters from last ApplyToClient + ApplyAliveSet pass. Lets us tell the
+        // difference between "host didn't send anything" vs "host sent N entities but only K
+        // matched our cache" (path-hash drift between host and client).
+        public static int LastApplyHits;
+        public static int LastApplyMisses;
+        public static int LastDeactivated;
 
         // Periodic re-walk cadence. Tightened from 2s to 0.5s now that we also track
         // AbstractProjectile — projectiles are short-lived (sub-second), so a 2s interval
@@ -135,6 +141,11 @@ namespace CupheadCoop.Coop
                     _lastLoggedCount = kept;
                     _lastLoggedScene = scene;
                 }
+                // CRITICAL: gates in CaptureForHost/ApplyToClient/ApplyAliveSet check
+                // _cacheValid before doing anything. Forgetting this flip in v0.4.0–v0.8.0
+                // silently dead-stopped the entire entity sync layer (host's tx ents=0,
+                // client's bosses/projectiles/death-sync all no-op).
+                _cacheValid = true;
             }
             catch (System.Exception ex)
             {
@@ -209,6 +220,7 @@ namespace CupheadCoop.Coop
             var alive = new HashSet<uint>();
             for (int i = 0; i < aliveCount; i++) alive.Add(aliveHashes[i]);
 
+            int deactivated = 0;
             // For each cached entity, if its hash isn't in the alive set AND its GameObject is
             // currently active, deactivate it. This collapses host-killed enemies / despawned
             // projectiles on the client immediately rather than waiting for the next refresh.
@@ -225,20 +237,23 @@ namespace CupheadCoop.Coop
                 }
                 else
                 {
-                    if (go.activeSelf) go.SetActive(false);
+                    if (go.activeSelf) { go.SetActive(false); deactivated++; }
                 }
             }
+            LastDeactivated = deactivated;
         }
 
         public static void ApplyToClient(EntitySnapshot[] snapshots, int count)
         {
-            if (!_cacheValid) return;
+            if (!_cacheValid) { LastApplyHits = 0; LastApplyMisses = 0; return; }
 
+            int hits = 0, misses = 0;
             for (int i = 0; i < count; i++)
             {
                 var s = snapshots[i];
-                if (!_byPath.TryGetValue(s.PathHash, out var er)) continue;
-                if (er.Transform == null) continue;
+                if (!_byPath.TryGetValue(s.PathHash, out var er)) { misses++; continue; }
+                if (er.Transform == null) { misses++; continue; }
+                hits++;
 
                 try
                 {
@@ -270,6 +285,8 @@ namespace CupheadCoop.Coop
                     // entity went away mid-apply (scene unload race) — skip
                 }
             }
+            LastApplyHits = hits;
+            LastApplyMisses = misses;
         }
 
         /// <summary>
