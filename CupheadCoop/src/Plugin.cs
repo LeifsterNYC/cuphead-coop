@@ -11,7 +11,7 @@ namespace CupheadCoop
     public class Plugin : BaseUnityPlugin
     {
         public const string GUID = "leif.cupheadcoop";
-        public const string Version = "0.6.1";
+        public const string Version = "0.6.2";
 
         private Harmony _harmony;
         private CoopHost _host;
@@ -20,19 +20,25 @@ namespace CupheadCoop
 
         private void Awake()
         {
-            ModConfig.Bind(Config);
-            PlayerInputInit_Patch.Log = Logger;
-            ScenePuppetry.Log = Logger;
-            EntitySync.Log = Logger;
-            EntitySync.Wire();
-            LogTap.Wire();
-
-            // Keep the simulation, network polling, and snapshot pump running when Cuphead
-            // loses focus — otherwise alt-tabbing to a terminal kills the host's Update loop
-            // and state snapshots stop until you click back into the game.
-            Application.runInBackground = true;
-
+            // Log this BEFORE any other init so testers can confirm Awake actually fires.
+            // If a static-init or sceneLoaded subscription failure kills Awake silently,
+            // the absence of this line is a definitive signal.
             Logger.LogInfo("CupheadCoop " + Version + " loading…");
+
+            try
+            {
+                ModConfig.Bind(Config);
+                PlayerInputInit_Patch.Log = Logger;
+                ScenePuppetry.Log = Logger;
+                EntitySync.Log = Logger;
+                EntitySync.Wire();
+                LogTap.Wire();
+                Application.runInBackground = true;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("Pre-patch init failed: " + ex);
+            }
 
             _harmony = new Harmony(GUID);
             try
@@ -47,7 +53,14 @@ namespace CupheadCoop
                 Logger.LogError("Harmony patch failure: " + ex);
             }
 
-            _overlay = gameObject.AddComponent<CoopOverlay>();
+            try
+            {
+                _overlay = gameObject.AddComponent<CoopOverlay>();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("Overlay attach failed: " + ex);
+            }
 
             Logger.LogInfo("Press " + ModConfig.KeyHost.Value + " to host, " + ModConfig.KeyConnect.Value +
                            " to connect to " + ModConfig.RemoteHost.Value + ":" + ModConfig.Port.Value +
