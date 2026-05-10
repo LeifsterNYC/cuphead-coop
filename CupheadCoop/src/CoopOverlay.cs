@@ -107,8 +107,15 @@ namespace CupheadCoop
                     ? CoopState.RemoteP2X.ToString("0.0") + "," + CoopState.RemoteP2Y.ToString("0.0") +
                       " hp=" + CoopState.RemoteP2Hp + (CoopState.RemoteP2IsDead ? " DEAD" : "")
                     : "-";
+                // ents=rx/cache  hits=apply-hit  miss=apply-miss  off=alive-deactivated
+                // hit/miss tells us if path-hashes line up between host and client. Persistent
+                // miss > 0 with hit == 0 means the host's path-hash space and the client's are
+                // disjoint (likely runtime-spawn order differs, scene differs, or scene-name
+                // prefix differs).
                 line3 = "rx state seq=" + CoopState.RemoteStateSequence + " p1=" + cp1 + "  p2=" + cp2 +
                        "  ents=" + CoopState.RemoteEntityCount + "/" + EntitySync.CacheSize +
+                       " hit=" + EntitySync.LastApplyHits + " miss=" + EntitySync.LastApplyMisses +
+                       " off=" + EntitySync.LastDeactivated +
                        (CoopState.RemoteIsPaused ? "  [PAUSED]" : "");
             }
 

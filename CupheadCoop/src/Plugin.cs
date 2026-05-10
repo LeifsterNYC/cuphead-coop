@@ -18,7 +18,7 @@ namespace CupheadCoop
     public class Plugin : BaseUnityPlugin
     {
         public const string GUID = "leif.cupheadcoop";
-        public const string Version = "0.8.0";
+        public const string Version = "0.8.1";
 
         private Harmony _harmony;
         private CoopHost _host;
@@ -115,6 +115,22 @@ namespace CupheadCoop
             // Both host and client may have queued a P2 auto-join.
             if (CoopState.Mode != CoopMode.Off)
                 P2AutoJoin.TickIfPending();
+        }
+
+        // CRITICAL: also pump the host network in FixedUpdate. Cuphead's ArcadePlayerMotor.HandleInput
+        // runs from FixedUpdate, and FixedUpdate fires BEFORE Update in a Unity frame. If we only
+        // pumped from Update, packets that arrived between LateUpdate(N) and FixedUpdate(N+1) would
+        // sit unprocessed when HandleInput reads actions.GetButtonDown(2) in FixedUpdate(N+1) —
+        // the down-edge would be visible only in Update(N+1), one phase too late. AdvanceFrame
+        // (LateUpdate, end of frame) then moves CurrentButtons → PreviousButtons, eating the edge.
+        // Symptom: holding jump on client never registers on host's P2 even though btns shows the
+        // bit set. Pumping in FixedUpdate fixes the input timing for edge-triggered actions.
+        // Held buttons (Shoot uses GetButton, not GetButtonDown) didn't have this problem because
+        // CurrentButtons stays valid across frames once set.
+        private void FixedUpdate()
+        {
+            if (CoopState.Mode == CoopMode.Host)
+                _host?.Pump();
         }
 
         // LateUpdate moved into CoopLateApply (separate component with [DefaultExecutionOrder(+32000)])
