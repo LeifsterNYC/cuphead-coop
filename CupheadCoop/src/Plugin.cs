@@ -11,7 +11,7 @@ namespace CupheadCoop
     public class Plugin : BaseUnityPlugin
     {
         public const string GUID = "leif.cupheadcoop";
-        public const string Version = "0.7.3";
+        public const string Version = "0.7.4";
 
         private Harmony _harmony;
         private CoopHost _host;
@@ -176,6 +176,19 @@ namespace CupheadCoop
             // controls onto the host's Player 2. The gate patches in RewiredFocusGate would
             // otherwise return zero for client-mode reads — we set IsCapturingLocalInput so our
             // calls bypass the gate and see real keyboard state.
+            //
+            // Critical: skip capture when the client window doesn't have OS focus. Otherwise the
+            // client process keeps reading global keyboard state and forwarding to the host, so
+            // typing in the focused HOST window also moves host's P2 (via the network roundtrip
+            // from the unfocused client). Solo-testing nightmare.
+            if (ModConfig.FocusGateInput.Value && !Application.isFocused)
+            {
+                CoopState.LocalButtons = 0;
+                CoopState.LocalAxisX = 0f;
+                CoopState.LocalAxisY = 0f;
+                return;
+            }
+
             var p1 = CoopState.LocalPlayer1;
             if (p1 == null) return;
 
