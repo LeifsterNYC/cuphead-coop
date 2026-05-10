@@ -35,6 +35,7 @@ namespace CupheadCoop
         public static ConfigEntry<bool> EnableProjectileSync;
         public static ConfigEntry<bool> EnableClientEntityAISuppress;
         public static ConfigEntry<bool> EnableSpawnFromHost;
+        public static ConfigEntry<bool> EnableRemoteMotorBypass;
 
         public static void Bind(ConfigFile cfg)
         {
@@ -90,6 +91,8 @@ namespace CupheadCoop
                 "v0.9.0 HKMP-style enemy AI suppression: when caching AbstractLevelEntity instances on client, set their MonoBehaviour.enabled = false so Unity stops calling Update/FixedUpdate on the AI script. Transforms + animators + sprite renderers still work — host's stream drives them. Without this, client's local boss AI runs in parallel with host's and the two sims drift (different RNG, different attack timing). Disable if a specific boss visually freezes or behaves wrong on client.");
             EnableSpawnFromHost = cfg.Bind("Sync", "EnableSpawnFromHost", true,
                 "v0.9.0 spawn-from-host: when host streams an entity or projectile that client doesn't have locally (boss-summoned minion, host-fired projectile that client's suppressed AI didn't fire), Object.Instantiate from a local prefab template (built at scene-load by walking FindObjectsOfType + hashing Type.FullName). Required for full visual sync once enemy AI is suppressed. Disable if Instantiate'd clones cause Unity errors / NREs in your version of Cuphead.");
+            EnableRemoteMotorBypass = cfg.Bind("Sync", "EnableRemoteMotorBypass", true,
+                "v0.9.1 architectural pivot inspired by Germanized/CupHeads' PlayerMotorPatch: on client, prefix-skip LevelPlayerMotor.FixedUpdate and ArcadePlayerMotor.FixedUpdate for both player slots. Drive their visible state purely from host's transform stream (lerp position) + Traverse-set motor properties (LookDirection, MoveDirection, Grounded). Eliminates the parallel-sim divergence that input-mirroring couldn't fully fix. Disable if both cups go visually static or jitter weirdly.");
         }
     }
 }

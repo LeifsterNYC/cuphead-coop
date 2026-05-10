@@ -139,6 +139,7 @@ namespace CupheadCoop.Coop
             harmony.PatchAll(typeof(AnimatorParamPatches));
             harmony.PatchAll(typeof(PlayerAnimControllerUpdateBlock));
             harmony.PatchAll(typeof(ProjectileLifecyclePatches));
+            harmony.PatchAll(typeof(PlayerMotorBypass));
         }
 
         private static bool ShouldOverride(Player __instance)
