@@ -86,7 +86,7 @@ net.Stop();
 return 0;
 
 /// <summary>Wire-protocol version we claim. Must match Net/Protocol.cs in the plugin.</summary>
-static class Proto { public const int Version = 10; }
+static class Proto { public const int Version = 11; }
 
 enum InputPattern { WalkRight, WalkLeft, Jump, Idle }
 
@@ -195,6 +195,7 @@ class Listener : INetEventListener
                 for (int i = 0; i < LastEntityCount; i++)
                 {
                     /* pathHash */ reader.GetUInt();
+                    /* typeId */   reader.GetUInt();   // v11
                     /* x */        reader.GetFloat();
                     /* y */        reader.GetFloat();
                     /* scaleX */   reader.GetFloat();
@@ -208,6 +209,7 @@ class Listener : INetEventListener
                 for (int i = 0; i < projCount; i++)
                 {
                     /* networkId */ reader.GetUInt();
+                    /* typeId */    reader.GetUInt();    // v11
                     /* x */         reader.GetFloat();
                     /* y */         reader.GetFloat();
                     /* scaleX */    reader.GetFloat();

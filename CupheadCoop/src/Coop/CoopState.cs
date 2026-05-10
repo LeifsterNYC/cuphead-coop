@@ -285,6 +285,11 @@ namespace CupheadCoop.Coop
             MirroredP2AxisY = 0f;
             _prevSeenP2Buttons = 0;
             ProjectileSync.Reset();
+            // v0.9.0: re-enable any AbstractLevelEntity AI components we disabled while in
+            // client mode + drop the prefab template registry. Otherwise after F11 the user's
+            // single-player session has dead bosses (AI disabled).
+            EntitySync.RestoreClientDisabled();
+            TypeRegistry.ClearClient();
         }
 
         /// <summary>

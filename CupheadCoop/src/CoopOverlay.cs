@@ -116,7 +116,9 @@ namespace CupheadCoop
                 line3 = "rx state seq=" + CoopState.RemoteStateSequence + " p1=" + cp1 + "  p2=" + cp2 +
                        "  ents=" + CoopState.RemoteEntityCount + "/" + EntitySync.CacheSize +
                        " hit=" + EntitySync.LastApplyHits + " miss=" + EntitySync.LastApplyMisses +
+                       " spawn=" + EntitySync.LastSpawnedFromHost +
                        " off=" + EntitySync.LastDeactivated +
+                       " types=" + TypeRegistry.ClientRegistryCount +
                        "  proj=" + CoopState.RemoteProjectileCount + " bound=" + ProjectileSync.LastBoundCount +
                        " unb=" + ProjectileSync.LastUnboundCandidates +
                        (CoopState.RemoteIsPaused ? "  [PAUSED]" : "");

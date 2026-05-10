@@ -33,7 +33,16 @@ namespace CupheadCoop.Coop
             public Transform Transform;
             public Animator Animator;
             public string Path; // kept for debug logging
+            public uint TypeId; // v11: FNV1a32(Type.FullName) — used by host's CaptureForHost
+                                // to send the right TypeId to client even if the entity instance
+                                // changes; precomputed once at register time.
         }
+
+        // v0.9.0: track which AbstractLevelEntity components we've disabled on client so we
+        // can re-enable them when the session ends (otherwise re-entering the level in
+        // single-player keeps a dead boss). Keyed by Component InstanceID for fast removal.
+        private static readonly Dictionary<int, AbstractLevelEntity> _clientDisabled
+            = new Dictionary<int, AbstractLevelEntity>();
 
         // Path-hash → live reference. Rebuilt on every scene load.
         private static readonly Dictionary<uint, EntityRef> _byPath = new Dictionary<uint, EntityRef>();
@@ -61,6 +70,7 @@ namespace CupheadCoop.Coop
         public static int LastApplyHits;
         public static int LastApplyMisses;
         public static int LastDeactivated;
+        public static int LastSpawnedFromHost; // v11: how many of the hits this tick came via Instantiate-from-template
 
         // Periodic re-walk cadence. Tightened from 2s to 0.5s now that we also track
         // AbstractProjectile — projectiles are short-lived (sub-second), so a 2s interval
@@ -194,6 +204,7 @@ namespace CupheadCoop.Coop
                 HostBuffer[count] = new EntitySnapshot
                 {
                     PathHash = kvp.Key,
+                    TypeId = er.TypeId,
                     X = pos.x,
                     Y = pos.y,
                     ScaleX = scale.x,
@@ -247,13 +258,57 @@ namespace CupheadCoop.Coop
         {
             if (!_cacheValid) { LastApplyHits = 0; LastApplyMisses = 0; return; }
 
-            int hits = 0, misses = 0;
+            int hits = 0, misses = 0, spawned = 0;
             for (int i = 0; i < count; i++)
             {
                 var s = snapshots[i];
-                if (!_byPath.TryGetValue(s.PathHash, out var er)) { misses++; continue; }
-                if (er.Transform == null) { misses++; continue; }
-                hits++;
+                if (!_byPath.TryGetValue(s.PathHash, out var er) || er.Transform == null)
+                {
+                    // v11: try to instantiate from local prefab registry. Host has an entity
+                    // we don't — most commonly a boss-summoned minion that spawned only on
+                    // host because client's AI is suppressed. Look up by TypeId, clone, place.
+                    GameObject template = (s.TypeId != 0 && ModConfig.EnableSpawnFromHost.Value)
+                        ? TypeRegistry.GetClientTemplate(s.TypeId)
+                        : null;
+                    if (template == null) { misses++; continue; }
+                    GameObject newGo;
+                    try
+                    {
+                        newGo = Object.Instantiate(template);
+                    }
+                    catch (System.Exception ex)
+                    {
+                        Log?.LogWarning("EntitySync: spawn-from-host Instantiate failed for typeId=" +
+                                         s.TypeId.ToString("X") + ": " + ex.Message);
+                        misses++;
+                        continue;
+                    }
+                    var t = newGo.transform;
+                    t.position = new Vector3(s.X, s.Y, t.position.z);
+                    t.localScale = new Vector3(s.ScaleX, s.ScaleY, t.localScale.z);
+                    var newAnim = newGo.GetComponentInChildren<Animator>();
+                    var newAi = newGo.GetComponent<AbstractLevelEntity>();
+                    // Disable AI on the spawned-from-host clone so it stays a pure render
+                    // target — same policy as native-cached entities on client.
+                    if (newAi != null && ModConfig.EnableClientEntityAISuppress.Value)
+                    {
+                        newAi.enabled = false;
+                        _clientDisabled[newAi.GetInstanceID()] = newAi;
+                    }
+                    er = new EntityRef
+                    {
+                        Transform = t,
+                        Animator = newAnim,
+                        Path = "<spawned-from-host>",
+                        TypeId = s.TypeId
+                    };
+                    _byPath[s.PathHash] = er;
+                    spawned++;
+                    hits++;
+                    // fall through to apply transform/animator below — newly spawned entity
+                    // is at host's position, ready for the rest of the normal apply path.
+                }
+                else hits++;
 
                 try
                 {
@@ -287,6 +342,7 @@ namespace CupheadCoop.Coop
             }
             LastApplyHits = hits;
             LastApplyMisses = misses;
+            LastSpawnedFromHost = spawned;
         }
 
         /// <summary>
@@ -326,6 +382,14 @@ namespace CupheadCoop.Coop
 
         // Helper used by RefreshCache layers. Adds a GameObject to the cache if it has a
         // descendant Animator. Returns true if added.
+        //
+        // v0.9.0 client-side responsibilities also handled here:
+        //   - Hash the entity's runtime Type.FullName and store in TypeRegistry as a prefab
+        //     template (so we can Instantiate later if host streams a not-yet-cached entity).
+        //   - If EnableClientEntityAISuppress is on AND this is an AbstractLevelEntity (not
+        //     a projectile, which has its own lifecycle), set the AI component's
+        //     MonoBehaviour.enabled = false so Unity stops calling Update/FixedUpdate on it.
+        //     Track the disabled component in _clientDisabled so we can re-enable on disconnect.
         private static bool TryAdd(GameObject go, ref int kept, ref int skipped, string layerTag)
         {
             if (go == null) return false;
@@ -334,9 +398,47 @@ namespace CupheadCoop.Coop
             if (animator == null) { skipped++; return false; }
             string path = ComputePath(go.transform);
             uint hash = Fnv1a32(path);
-            _byPath[hash] = new EntityRef { Transform = go.transform, Animator = animator, Path = path };
+
+            uint typeId = 0;
+            // Get the most-derived component on this GameObject for type registry. For "le"
+            // layer we use AbstractLevelEntity (or its concrete subclass); for "p" layer
+            // (projectile) we use AbstractProjectile.
+            if (layerTag == "le")
+            {
+                var ai = go.GetComponent<AbstractLevelEntity>();
+                if (ai != null) typeId = TypeRegistry.HashType(ai.GetType());
+                if (CoopState.Mode == CoopMode.Client)
+                {
+                    if (ai != null) TypeRegistry.RegisterClientTemplate(ai.GetType(), go);
+                    if (ai != null && ModConfig.EnableClientEntityAISuppress.Value && ai.enabled)
+                    {
+                        ai.enabled = false;
+                        _clientDisabled[ai.GetInstanceID()] = ai;
+                    }
+                }
+            }
+            else if (layerTag == "p")
+            {
+                var pp = go.GetComponent<AbstractProjectile>();
+                if (pp != null) typeId = TypeRegistry.HashType(pp.GetType());
+                if (CoopState.Mode == CoopMode.Client && pp != null)
+                    TypeRegistry.RegisterClientTemplate(pp.GetType(), go);
+            }
+
+            _byPath[hash] = new EntityRef { Transform = go.transform, Animator = animator, Path = path, TypeId = typeId };
             if (kept < MaxSyncedEntities) kept++;
             return true;
+        }
+
+        /// <summary>Re-enable any AbstractLevelEntity AI components we disabled on client so
+        /// next single-player session has working bosses. Called from CoopState.Reset.</summary>
+        public static void RestoreClientDisabled()
+        {
+            foreach (var kvp in _clientDisabled)
+            {
+                if (kvp.Value != null) kvp.Value.enabled = true;
+            }
+            _clientDisabled.Clear();
         }
 
         /// <summary>

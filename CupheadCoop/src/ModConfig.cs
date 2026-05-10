@@ -33,6 +33,8 @@ namespace CupheadCoop
         public static ConfigEntry<bool> FocusGateInput;
         public static ConfigEntry<bool> EnableAutoP2Join;
         public static ConfigEntry<bool> EnableProjectileSync;
+        public static ConfigEntry<bool> EnableClientEntityAISuppress;
+        public static ConfigEntry<bool> EnableSpawnFromHost;
 
         public static void Bind(ConfigFile cfg)
         {
@@ -84,6 +86,10 @@ namespace CupheadCoop
                 "On both host and client: when a coop session establishes, force-join P2 via reflection on PlayerManager. Required for Justin-style \"keyboard on remote machine\" coop where host has no local controller to do the natural join. Disable if it interferes with single-player or causes weird state in your version of Cuphead.");
             EnableProjectileSync = cfg.Bind("Sync", "EnableProjectileSync", true,
                 "v0.8.2 M7 v2: host assigns synthetic NetworkIDs to AbstractProjectile instances at spawn; client binds local AbstractProjectile instances to those IDs by closest-position match. Replaces the broken path-hash approach for runtime clones. Disable if projectiles glitch out badly in some level.");
+            EnableClientEntityAISuppress = cfg.Bind("Sync", "EnableClientEntityAISuppress", true,
+                "v0.9.0 HKMP-style enemy AI suppression: when caching AbstractLevelEntity instances on client, set their MonoBehaviour.enabled = false so Unity stops calling Update/FixedUpdate on the AI script. Transforms + animators + sprite renderers still work — host's stream drives them. Without this, client's local boss AI runs in parallel with host's and the two sims drift (different RNG, different attack timing). Disable if a specific boss visually freezes or behaves wrong on client.");
+            EnableSpawnFromHost = cfg.Bind("Sync", "EnableSpawnFromHost", true,
+                "v0.9.0 spawn-from-host: when host streams an entity or projectile that client doesn't have locally (boss-summoned minion, host-fired projectile that client's suppressed AI didn't fire), Object.Instantiate from a local prefab template (built at scene-load by walking FindObjectsOfType + hashing Type.FullName). Required for full visual sync once enemy AI is suppressed. Disable if Instantiate'd clones cause Unity errors / NREs in your version of Cuphead.");
         }
     }
 }
