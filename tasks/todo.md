@@ -69,5 +69,22 @@ StateSnapshot stream from host to client works (mock client receives `rx state s
 ### M5 — animation sync (shipped, awaiting in-game verification)
 PlayerSnapshot extended with Animator state hash + normalized time. Protocol bumped to v3. Client calls `Animator.Play(hash, 0, time)` only on state changes or significant phase drift, avoiding per-frame stutter resets.
 
-### M6 — entity sync (designed, not implemented)
-See `tasks/M6-design.md`. Scoped to scene-loaded `AbstractLevelEntity` instances with descendant Animators. Path-hash identification (FNV1a32). v1 doesn't cover spawned projectiles or phase-transition objects.
+### M6 — entity sync (shipped as v0.4.0, awaiting in-game verification)
+- `EntitySync` cache: `Object.FindObjectsOfType<AbstractLevelEntity>` → filter by descendant `Animator` → FNV1a32 hash of scene-relative hierarchy path
+- Wire format: `EntitySnapshot[]` appended to `StateSnapshot`; cap 32 per packet (~24 KB/s @ 30Hz)
+- Periodic refresh every 2s catches phase-transitions and runtime spawns the `sceneLoaded` callback misses
+- Overlay shows `ents=N` (host: captured) and `ents=R/C` (client: received / cache size)
+- Hash misses are silently dropped — covers transition races and runtime-spawned objects v1 doesn't track
+
+### Test plan for M5+M6 (next session)
+1. Get into a real run-and-gun stage (Bootleg Boy, Hilda Berg, etc.). 2P co-op required for P2 capture.
+2. F9. Overlay flips to `mode=Host`.
+3. Run mock client — should print `entities=N` with N > 0 once the boss is in the scene.
+4. BepInEx log should show `EntitySync: cached N entities for scene 'level_xyz'` after each scene load.
+5. With a real Mac client, the boss should mirror visually.
+
+### Open after M6
+- M7: runtime-spawn entity sync (projectiles, summoned mobs, phase-2 boss instantiations). Hardest.
+- M8: HP/death/score sync.
+- M9: suppress client-side sim influence so host is fully authoritative for damage too.
+- Pause/menu sync.

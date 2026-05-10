@@ -47,6 +47,13 @@ namespace CupheadCoop.Coop
         public static int LastCapturedCount;
         public static int CacheSize => _byPath.Count;
 
+        // Periodic re-walk cadence. Phase-transition bosses, mid-level spawns of stationary
+        // animated objects, and any add/remove the sceneLoaded callback misses get picked up
+        // here. ~2s is short enough that desyncs are brief and long enough that the cost is
+        // negligible (~25ms × 0.5/s).
+        private const float RefreshIntervalSec = 2f;
+        private static float _secondsSinceRefresh;
+
         public static void Wire()
         {
             SceneManager.sceneLoaded += OnSceneLoaded;
@@ -57,6 +64,20 @@ namespace CupheadCoop.Coop
 
         private static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
         {
+            RefreshCache();
+            _secondsSinceRefresh = 0f;
+        }
+
+        /// <summary>
+        /// Called every frame from <c>Plugin.LateUpdate</c>. Refreshes the cache on a fixed
+        /// cadence so we pick up entities that didn't exist at scene-load time (boss phase 2,
+        /// shopkeepers spawning, intro-cutscene cleanup leaving new objects behind).
+        /// </summary>
+        public static void Tick(float dt)
+        {
+            _secondsSinceRefresh += dt;
+            if (_secondsSinceRefresh < RefreshIntervalSec) return;
+            _secondsSinceRefresh = 0f;
             RefreshCache();
         }
 

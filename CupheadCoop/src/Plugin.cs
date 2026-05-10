@@ -80,11 +80,13 @@ namespace CupheadCoop
             // rendered frame matches what the host sees.
             if (CoopState.Mode == CoopMode.Host)
             {
+                EntitySync.Tick(Time.unscaledDeltaTime);
                 ScenePuppetry.HostCapture();
                 _host?.TickStateSnapshot(Time.unscaledDeltaTime);
             }
             else if (CoopState.Mode == CoopMode.Client)
             {
+                EntitySync.Tick(Time.unscaledDeltaTime);
                 ScenePuppetry.ClientApply();
                 EntitySync.ApplyToClient(CoopState.RemoteEntities, CoopState.RemoteEntityCount);
             }
