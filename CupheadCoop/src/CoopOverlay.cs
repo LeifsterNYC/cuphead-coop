@@ -73,7 +73,7 @@ namespace CupheadCoop
                 string hp2 = ScenePuppetry.LocalP2Present
                     ? ScenePuppetry.LocalP2X.ToString("0.0") + "," + ScenePuppetry.LocalP2Y.ToString("0.0")
                     : "-";
-                line3 = "tx state p1=" + hp1 + " p2=" + hp2;
+                line3 = "tx state p1=" + hp1 + " p2=" + hp2 + "  ents=" + EntitySync.LastCapturedCount;
             }
             else if (CoopState.Mode == CoopMode.Client)
             {
@@ -83,7 +83,8 @@ namespace CupheadCoop
                 string cp2 = CoopState.RemoteP2Present
                     ? CoopState.RemoteP2X.ToString("0.0") + "," + CoopState.RemoteP2Y.ToString("0.0")
                     : "-";
-                line3 = "rx state seq=" + CoopState.RemoteStateSequence + " p1=" + cp1 + " p2=" + cp2;
+                line3 = "rx state seq=" + CoopState.RemoteStateSequence + " p1=" + cp1 + " p2=" + cp2 +
+                       "  ents=" + CoopState.RemoteEntityCount + "/" + EntitySync.CacheSize;
             }
 
             // Line 4+: tail of recent BepInEx log events. Capped to LogTap.MaxLines.

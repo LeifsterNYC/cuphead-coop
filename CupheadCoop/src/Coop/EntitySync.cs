@@ -43,6 +43,10 @@ namespace CupheadCoop.Coop
         // across frames to avoid per-frame allocations on the hot path.
         public static readonly EntitySnapshot[] HostBuffer = new EntitySnapshot[MaxSyncedEntities];
 
+        // Diagnostic counters surfaced by the in-game overlay.
+        public static int LastCapturedCount;
+        public static int CacheSize => _byPath.Count;
+
         public static void Wire()
         {
             SceneManager.sceneLoaded += OnSceneLoaded;
@@ -108,7 +112,7 @@ namespace CupheadCoop.Coop
         public static void CaptureForHost(out int count)
         {
             count = 0;
-            if (!_cacheValid) return;
+            if (!_cacheValid) { LastCapturedCount = 0; return; }
 
             foreach (var kvp in _byPath)
             {
@@ -140,6 +144,7 @@ namespace CupheadCoop.Coop
                 };
                 count++;
             }
+            LastCapturedCount = count;
         }
 
         /// <summary>
