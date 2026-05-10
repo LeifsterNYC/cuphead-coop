@@ -18,7 +18,7 @@ namespace CupheadCoop
     public class Plugin : BaseUnityPlugin
     {
         public const string GUID = "leif.cupheadcoop";
-        public const string Version = "0.8.1";
+        public const string Version = "0.8.2";
 
         private Harmony _harmony;
         private CoopHost _host;
@@ -48,6 +48,7 @@ namespace CupheadCoop
                 EntitySync.Log = Logger;
                 SceneSync.Log = Logger;
                 P2AutoJoin.Log = Logger;
+                ProjectileSync.Log = Logger;
                 EntitySync.Wire();
                 LogTap.Wire();
                 Application.runInBackground = true;

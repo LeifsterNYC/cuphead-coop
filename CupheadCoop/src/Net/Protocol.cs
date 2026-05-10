@@ -17,7 +17,9 @@ namespace CupheadCoop.Net
         // v6 = pause sync — StateSnapshot now carries an IsPaused bit
         // v7 = M11 scene sync — StateSnapshot carries the host's active scene name
         // v8 = M7 alive-hash list (client can SetActive(false) on entities host has killed)
-        public const int Version = 8;
+        // v9 = M7 v2 NetworkID-based projectile sync — StateSnapshot carries a ProjectileSnapshot[]
+        //      with synthetic host-assigned IDs, replacing the broken path-hash-for-clones approach
+        public const int Version = 9;
     }
 
     internal enum PacketType : byte
@@ -192,6 +194,48 @@ namespace CupheadCoop.Net
     }
 
     /// <summary>
+    /// v9: per-projectile slice. Host assigns NetworkID at AbstractProjectile.Awake time;
+    /// client binds local AbstractProjectile instances to NetworkID by closest-position
+    /// match within a small radius. Replaces the path-hash approach for runtime clones,
+    /// which couldn't keep up with divergent spawn order between host and client.
+    /// </summary>
+    internal struct ProjectileSnapshot
+    {
+        public uint NetworkId;
+        public float X;
+        public float Y;
+        public float ScaleX;
+        public float ScaleY;
+        public int AnimStateHash;
+        public float AnimNormalizedTime;
+
+        public void Write(NetDataWriter w)
+        {
+            w.Put(NetworkId);
+            w.Put(X);
+            w.Put(Y);
+            w.Put(ScaleX);
+            w.Put(ScaleY);
+            w.Put(AnimStateHash);
+            w.Put(AnimNormalizedTime);
+        }
+
+        public static ProjectileSnapshot Read(NetDataReader r)
+        {
+            return new ProjectileSnapshot
+            {
+                NetworkId = r.GetUInt(),
+                X = r.GetFloat(),
+                Y = r.GetFloat(),
+                ScaleX = r.GetFloat(),
+                ScaleY = r.GetFloat(),
+                AnimStateHash = r.GetInt(),
+                AnimNormalizedTime = r.GetFloat()
+            };
+        }
+    }
+
+    /// <summary>
     /// Host -> client world-state packet. Sent at <see cref="ModConfig.StateSendRateHz"/> Hz over an
     /// unreliable+sequenced channel: stale packets are dropped by the client based on Sequence,
     /// and lost packets just cause one missed interpolation frame, which is fine.
@@ -213,6 +257,13 @@ namespace CupheadCoop.Net
         // higher than the 64 we track positions for.
         public ushort AliveHashCount;
         public uint[] AliveHashes;
+        // v9: NetworkID-based projectile sync. Per active projectile on the host, capped at
+        // ProjectileSync.MaxSyncedProjectiles. Client binds these to local AbstractProjectile
+        // instances by closest-position match the first time it sees a NetworkID, then
+        // overrides position/scale/animator each tick. Disappearance from this list for >0.4s
+        // signals destruction; client destroys its bound local instance.
+        public byte ProjectileCount;
+        public ProjectileSnapshot[] Projectiles;
 
         public void Write(NetDataWriter w)
         {
@@ -227,6 +278,8 @@ namespace CupheadCoop.Net
             for (int i = 0; i < EntityCount; i++) Entities[i].Write(w);
             w.Put(AliveHashCount);
             for (int i = 0; i < AliveHashCount; i++) w.Put(AliveHashes[i]);
+            w.Put(ProjectileCount);
+            for (int i = 0; i < ProjectileCount; i++) Projectiles[i].Write(w);
         }
 
         public static StateSnapshot Read(NetDataReader r)
@@ -246,6 +299,9 @@ namespace CupheadCoop.Net
             s.AliveHashCount = r.GetUShort();
             s.AliveHashes = s.AliveHashCount > 0 ? new uint[s.AliveHashCount] : null;
             for (int i = 0; i < s.AliveHashCount; i++) s.AliveHashes[i] = r.GetUInt();
+            s.ProjectileCount = r.GetByte();
+            s.Projectiles = s.ProjectileCount > 0 ? new ProjectileSnapshot[s.ProjectileCount] : null;
+            for (int i = 0; i < s.ProjectileCount; i++) s.Projectiles[i] = ProjectileSnapshot.Read(r);
             return s;
         }
     }

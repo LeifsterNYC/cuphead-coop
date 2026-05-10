@@ -78,6 +78,8 @@ namespace CupheadCoop.Net
             _stateSeq++;
             int entityCount;
             EntitySync.CaptureForHost(out entityCount);
+            int projectileCount;
+            ProjectileSync.CaptureForHost(out projectileCount);
             var snap = new StateSnapshot
             {
                 Sequence = _stateSeq,
@@ -109,7 +111,9 @@ namespace CupheadCoop.Net
                 EntityCount = (byte)entityCount,
                 Entities = EntitySync.HostBuffer,
                 AliveHashCount = (ushort)EntitySync.AliveHashesCount,
-                AliveHashes = EntitySync.AliveHashesBuffer
+                AliveHashes = EntitySync.AliveHashesBuffer,
+                ProjectileCount = (byte)projectileCount,
+                Projectiles = ProjectileSync.HostBuffer
             };
 
             var w = new NetDataWriter();

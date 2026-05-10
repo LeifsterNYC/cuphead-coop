@@ -95,6 +95,7 @@ namespace CupheadCoop
                       " hp=" + ScenePuppetry.LocalP2Hp + (ScenePuppetry.LocalP2IsDead ? " DEAD" : "")
                     : "-";
                 line3 = "tx state p1=" + hp1 + "  p2=" + hp2 + "  ents=" + EntitySync.LastCapturedCount +
+                       "  proj=" + ProjectileSync.LastHostCount +
                        (PauseSync.LocalIsPaused ? "  [PAUSED]" : "");
             }
             else if (CoopState.Mode == CoopMode.Client)
@@ -116,6 +117,8 @@ namespace CupheadCoop
                        "  ents=" + CoopState.RemoteEntityCount + "/" + EntitySync.CacheSize +
                        " hit=" + EntitySync.LastApplyHits + " miss=" + EntitySync.LastApplyMisses +
                        " off=" + EntitySync.LastDeactivated +
+                       "  proj=" + CoopState.RemoteProjectileCount + " bound=" + ProjectileSync.LastBoundCount +
+                       " unb=" + ProjectileSync.LastUnboundCandidates +
                        (CoopState.RemoteIsPaused ? "  [PAUSED]" : "");
             }
 

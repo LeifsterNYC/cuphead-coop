@@ -21,26 +21,33 @@ namespace CupheadCoop
 
         private void LateUpdate()
         {
+            float dt = Time.unscaledDeltaTime;
+            ProjectileSync.Tick(dt);
+
             if (CoopState.Mode == CoopMode.Host)
             {
-                EntitySync.Tick(Time.unscaledDeltaTime);
+                EntitySync.Tick(dt);
                 ScenePuppetry.HostCapture();
                 PauseSync.HostCapture();
                 SceneSync.HostCapture();
-                Owner?.HostInstance?.TickStateSnapshot(Time.unscaledDeltaTime);
+                Owner?.HostInstance?.TickStateSnapshot(dt);
             }
             else if (CoopState.Mode == CoopMode.Client)
             {
                 if (ModConfig.EnableSceneSync.Value)
                     SceneSync.ApplyFromHost(CoopState.RemoteSceneName);
 
-                EntitySync.Tick(Time.unscaledDeltaTime);
+                EntitySync.Tick(dt);
                 ScenePuppetry.ClientApply();
 
                 if (ModConfig.EnableEntitySync.Value)
                 {
                     EntitySync.ApplyAliveSet(CoopState.RemoteAliveHashes, CoopState.RemoteAliveHashCount);
                     EntitySync.ApplyToClient(CoopState.RemoteEntities, CoopState.RemoteEntityCount);
+                }
+                if (ModConfig.EnableProjectileSync.Value)
+                {
+                    ProjectileSync.ApplyToClient(CoopState.RemoteProjectiles, CoopState.RemoteProjectileCount);
                 }
                 if (ModConfig.EnablePauseSync.Value)
                     PauseSync.ApplyFromHost(CoopState.RemoteIsPaused);

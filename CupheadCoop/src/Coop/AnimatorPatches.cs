@@ -89,4 +89,41 @@ namespace CupheadCoop.Coop
         [HarmonyPrefix]
         private static bool ResetTrigger_Int(Animator __instance) => !ShouldBlock(__instance);
     }
+
+    /// <summary>
+    /// v0.8.2 — block Cuphead's player-animation-controller Update methods on client.
+    ///
+    /// Why: <see cref="ArcadePlayerAnimationController"/> and
+    /// <see cref="LevelPlayerAnimationController"/> both call <c>animator.Update(deltaTime)</c>
+    /// FOUR TIMES per frame from inside their own Update methods, in addition to Unity's
+    /// automatic animator update. Each manual Update advances time-based transitions in the
+    /// state machine. So even with our parameter-setter block in place, the animator
+    /// state machine progresses on time, transitions to "exit" states, and a moment later our
+    /// LateUpdate forces it back to host's state. Visible as a 2-frame flicker: client cup
+    /// alternates between base state and (idle?) state every frame. Especially noticeable
+    /// when the cup isn't moving on host either, since both sides should be at the SAME
+    /// idle state but client's animator clocks past it.
+    ///
+    /// Solution: skip the animation controller's Update entirely when in client mode. Host's
+    /// snapshot stream provides the animator state via <see cref="ScenePuppetry.ApplyTo"/>;
+    /// we don't need the controller's update. Same pattern for LevelPlayerAnimationController
+    /// (used in run-and-gun + boss levels) and MapPlayerAnimationController (world map).
+    /// </summary>
+    [HarmonyPatch]
+    internal static class PlayerAnimControllerUpdateBlock
+    {
+        private static bool ShouldBlock() => CoopState.Mode == CoopMode.Client;
+
+        [HarmonyPatch(typeof(global::ArcadePlayerAnimationController), "Update")]
+        [HarmonyPrefix]
+        private static bool Arcade_Update_Prefix() => !ShouldBlock();
+
+        [HarmonyPatch(typeof(global::LevelPlayerAnimationController), "Update")]
+        [HarmonyPrefix]
+        private static bool Level_Update_Prefix() => !ShouldBlock();
+
+        [HarmonyPatch(typeof(global::MapPlayerAnimationController), "Update")]
+        [HarmonyPrefix]
+        private static bool Map_Update_Prefix() => !ShouldBlock();
+    }
 }
