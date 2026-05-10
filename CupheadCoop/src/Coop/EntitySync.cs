@@ -38,6 +38,9 @@ namespace CupheadCoop.Coop
         // Path-hash → live reference. Rebuilt on every scene load.
         private static readonly Dictionary<uint, EntityRef> _byPath = new Dictionary<uint, EntityRef>();
         private static bool _cacheValid;
+        // Last-logged signature so periodic refreshes only chatter when something actually changes.
+        private static int _lastLoggedCount = -1;
+        private static string _lastLoggedScene;
 
         // Scratch buffer used by Plugin.LateUpdate when handing snapshots to CoopHost. Reused
         // across frames to avoid per-frame allocations on the hot path.
@@ -115,8 +118,16 @@ namespace CupheadCoop.Coop
                     kept++;
                 }
                 _cacheValid = true;
-                Log?.LogInfo("EntitySync: cached " + kept + " entities (" + skipped + " skipped) for scene '"
-                             + SceneManager.GetActiveScene().name + "'");
+                string scene = SceneManager.GetActiveScene().name;
+                // Only log when the count or scene changed — periodic refresh in a stable scene
+                // would otherwise dump an identical line into the overlay tail every 2s.
+                if (kept != _lastLoggedCount || scene != _lastLoggedScene)
+                {
+                    Log?.LogInfo("EntitySync: cached " + kept + " entities (" + skipped + " skipped) for scene '"
+                                 + scene + "'");
+                    _lastLoggedCount = kept;
+                    _lastLoggedScene = scene;
+                }
             }
             catch (System.Exception ex)
             {
