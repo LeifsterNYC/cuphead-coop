@@ -11,7 +11,7 @@ namespace CupheadCoop
     public class Plugin : BaseUnityPlugin
     {
         public const string GUID = "leif.cupheadcoop";
-        public const string Version = "0.5.0";
+        public const string Version = "0.6.0";
 
         private Harmony _harmony;
         private CoopHost _host;
@@ -82,6 +82,7 @@ namespace CupheadCoop
             {
                 EntitySync.Tick(Time.unscaledDeltaTime);
                 ScenePuppetry.HostCapture();
+                PauseSync.HostCapture();
                 _host?.TickStateSnapshot(Time.unscaledDeltaTime);
             }
             else if (CoopState.Mode == CoopMode.Client)
@@ -89,6 +90,7 @@ namespace CupheadCoop
                 EntitySync.Tick(Time.unscaledDeltaTime);
                 ScenePuppetry.ClientApply();
                 EntitySync.ApplyToClient(CoopState.RemoteEntities, CoopState.RemoteEntityCount);
+                PauseSync.ApplyFromHost(CoopState.RemoteIsPaused);
             }
 
             // Edge detection lives in CoopState — snapshot at end of frame so next frame's

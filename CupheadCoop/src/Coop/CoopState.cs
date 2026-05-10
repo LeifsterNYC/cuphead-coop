@@ -68,6 +68,9 @@ namespace CupheadCoop.Coop
         public static readonly EntitySnapshot[] RemoteEntities = new EntitySnapshot[EntitySync.MaxSyncedEntities];
         public static int RemoteEntityCount;
 
+        // Host's pause state. Client's PauseSync.ApplyFromHost converges to this each frame.
+        public static bool RemoteIsPaused;
+
         public static bool IsButtonHeld(int actionId)
         {
             if (actionId < 0 || actionId >= 32) return false;
@@ -135,6 +138,7 @@ namespace CupheadCoop.Coop
             RemoteP2Hp = -1;
             RemoteP2IsDead = false;
             RemoteEntityCount = 0;
+            RemoteIsPaused = false;
         }
 
         /// <summary>
@@ -142,6 +146,7 @@ namespace CupheadCoop.Coop
         /// </summary>
         public static void ApplyRemoteState(uint sequence,
                                             PlayerSnapshot p1, PlayerSnapshot p2,
+                                            bool isPaused,
                                             EntitySnapshot[] entities, int entityCount)
         {
             if (sequence != 0 && sequence <= RemoteStateSequence) return;
@@ -169,6 +174,7 @@ namespace CupheadCoop.Coop
             if (n > RemoteEntities.Length) n = RemoteEntities.Length;
             for (int i = 0; i < n; i++) RemoteEntities[i] = entities[i];
             RemoteEntityCount = n;
+            RemoteIsPaused = isPaused;
         }
 
         private static float Clamp(float v, float min, float max)

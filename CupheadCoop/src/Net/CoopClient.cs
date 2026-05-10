@@ -139,7 +139,7 @@ namespace CupheadCoop.Net
                 case PacketType.StateSnapshot:
                 {
                     var s = StateSnapshot.Read(reader);
-                    CoopState.ApplyRemoteState(s.Sequence, s.P1, s.P2, s.Entities, s.EntityCount);
+                    CoopState.ApplyRemoteState(s.Sequence, s.P1, s.P2, s.IsPaused, s.Entities, s.EntityCount);
                     if (ModConfig.Verbose.Value)
                         _log.LogDebug("rx state seq=" + s.Sequence + " p1=" + (s.P1.Present ? s.P1.X.ToString("F2") + "," + s.P1.Y.ToString("F2") : "-") +
                                       " p2=" + (s.P2.Present ? s.P2.X.ToString("F2") + "," + s.P2.Y.ToString("F2") : "-") +
