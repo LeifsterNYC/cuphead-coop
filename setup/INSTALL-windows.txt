@@ -1,0 +1,35 @@
+CupheadCoop — Windows install
+=============================
+
+Quick start (recommended):
+  Double-click setup-windows.bat after extracting this folder. A console
+  will open and prompt for usage. To run it with arguments:
+
+  Open "Command Prompt" or "Windows Terminal" in this folder, then:
+
+    setup-windows.bat 192.168.0.4
+
+  Replace the IP with the host PC's LAN address (or ZeroTier address).
+
+What it does:
+  1. Auto-detects your Cuphead install (walks Steam libraryfolders.vdf).
+  2. Downloads BepInEx 5.4.23.5 win_x64 if not already installed.
+  3. Drops the CupheadCoop plugin into <Cuphead>/BepInEx/plugins/.
+  4. Pre-fills <Cuphead>/BepInEx/config/leif.cupheadcoop.cfg with the
+     host IP you passed.
+  5. Enables the BepInEx console.
+
+Then:
+  - Launch Cuphead from Steam normally (no launch options needed).
+  - Start a single-player game.
+  - Press F10 to connect to the host.
+  - F11 to disconnect.
+
+If Cuphead is at a non-default path:
+  setup-windows.bat 192.168.0.4 "D:\My Games\Steam\steamapps\common\Cuphead"
+
+If your antivirus quarantines the BepInEx download:
+  - Whitelist the Cuphead folder, or
+  - Download BepInEx_win_x64_5.4.23.5.zip manually from
+    https://github.com/BepInEx/BepInEx/releases/tag/v5.4.23.5
+    and extract its contents into your Cuphead folder, then re-run this script.
