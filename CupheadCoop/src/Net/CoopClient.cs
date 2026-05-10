@@ -3,6 +3,7 @@ using BepInEx.Logging;
 using CupheadCoop.Coop;
 using LiteNetLib;
 using LiteNetLib.Utils;
+using UnityEngine;
 
 namespace CupheadCoop.Net
 {
@@ -18,6 +19,19 @@ namespace CupheadCoop.Net
         private float _accum;
         private uint _seq;
 
+        // Reconnect state. Auto-retries every ReconnectIntervalSec when disconnected
+        // unintentionally (network timeout, host closed, etc). User-initiated Stop sets
+        // _userDisconnected so we don't fight against the user pressing F11/K.
+        private const float ReconnectIntervalSec = 3f;
+        private string _lastHost;
+        private int _lastPort;
+        private string _lastConnectKey;
+        private bool _userDisconnected;
+        private float _reconnectTimer;
+        public bool Reconnecting { get; private set; }
+        public float SecondsUntilReconnect => Reconnecting ? Mathf.Max(0f, ReconnectIntervalSec - _reconnectTimer) : 0f;
+        public int PingMs { get; private set; }
+
         public bool Connected => _peer != null && _peer.ConnectionState == ConnectionState.Connected;
         public bool Running => _net != null && _net.IsRunning;
 
@@ -25,35 +39,51 @@ namespace CupheadCoop.Net
 
         public bool Start(string host, int port, string connectKey)
         {
+            _lastHost = host; _lastPort = port; _lastConnectKey = connectKey;
+            _userDisconnected = false;
+            return InternalConnect(initial: true);
+        }
+
+        private bool InternalConnect(bool initial)
+        {
             try
             {
-                _net = new NetManager(this);
-                _net.UnconnectedMessagesEnabled = false;
-                _net.UpdateTime = 15;
-                if (!_net.Start())
+                if (_net == null)
                 {
-                    _log.LogError("CoopClient: failed to start NetManager");
-                    _net = null;
-                    return false;
+                    _net = new NetManager(this);
+                    _net.UnconnectedMessagesEnabled = false;
+                    _net.UpdateTime = 15;
+                    if (!_net.Start())
+                    {
+                        _log.LogError("CoopClient: failed to start NetManager");
+                        _net = null;
+                        return false;
+                    }
                 }
-                _log.LogInfo("CoopClient: NetManager started, dialing " + host + ":" + port + " (key='" + connectKey + "')");
-                _peer = _net.Connect(host, port, connectKey);
+                _log.LogInfo("CoopClient: " + (initial ? "dialing" : "retrying") + " " + _lastHost + ":" + _lastPort);
+                _peer = _net.Connect(_lastHost, _lastPort, _lastConnectKey);
                 CoopState.Mode = CoopMode.Client;
-                _log.LogInfo("CoopClient: Connect() returned, peer=" + (_peer != null ? _peer.EndPoint?.ToString() : "null"));
+                Reconnecting = false;
+                _reconnectTimer = 0f;
                 return true;
             }
             catch (Exception ex)
             {
-                _log.LogError("CoopClient: Start failed with exception: " + ex.GetType().Name + ": " + ex.Message + "\n" + ex.StackTrace);
-                if (_net != null) { try { _net.Stop(); } catch { } _net = null; }
+                _log.LogError("CoopClient: Connect failed: " + ex.GetType().Name + ": " + ex.Message);
                 _peer = null;
-                CoopState.Reset();
+                if (initial)
+                {
+                    if (_net != null) { try { _net.Stop(); } catch { } _net = null; }
+                    CoopState.Reset();
+                }
                 return false;
             }
         }
 
         public void Stop()
         {
+            _userDisconnected = true;
+            Reconnecting = false;
             if (_net != null) { _net.Stop(); _net = null; }
             _peer = null;
             CoopState.Reset();
@@ -64,6 +94,17 @@ namespace CupheadCoop.Net
         {
             if (_net == null) return;
             _net.PollEvents();
+
+            if (Reconnecting)
+            {
+                _reconnectTimer += dt;
+                if (_reconnectTimer >= ReconnectIntervalSec)
+                {
+                    _reconnectTimer = 0f;
+                    InternalConnect(initial: false);
+                }
+                return;
+            }
 
             if (!Connected) return;
 
@@ -103,6 +144,19 @@ namespace CupheadCoop.Net
         {
             _log.LogWarning("CoopClient: disconnected (" + disconnectInfo.Reason + ")");
             _peer = null;
+            CoopState.HasRemoteInput = false;
+
+            // Auto-reconnect unless the user pressed F11/K. Most disconnect reasons are
+            // recoverable: Timeout (host paused / lost wifi), RemoteConnectionClose (host
+            // pressed F11), ConnectionFailed (host wasn't running yet — retry after host
+            // F9s).
+            if (!_userDisconnected && _net != null)
+            {
+                Reconnecting = true;
+                _reconnectTimer = 0f;
+                _log.LogInfo("CoopClient: will retry every " + ReconnectIntervalSec + "s until reconnected (press " +
+                             ModConfig.KeyDisconnect.Value + " to cancel)");
+            }
         }
 
         public void OnNetworkError(System.Net.IPEndPoint endPoint, System.Net.Sockets.SocketError socketError)
@@ -133,6 +187,11 @@ namespace CupheadCoop.Net
                     else
                     {
                         _log.LogInfo("CoopClient: handshake ok (v" + w.Version + ")");
+                        // Auto-join P2 on the local sim too. Without this, client's local
+                        // PlayerManager only has P1; there's no P2 GameObject to be the
+                        // target of host's streamed P2 transform, so the second cup is
+                        // invisible on client. Force-joining puts a P2 avatar in the scene.
+                        P2AutoJoin.Trigger();
                     }
                     break;
                 }
@@ -140,6 +199,7 @@ namespace CupheadCoop.Net
                 {
                     var s = StateSnapshot.Read(reader);
                     CoopState.ApplyRemoteState(s.Sequence, s.P1, s.P2, s.IsPaused, s.SceneName, s.Entities, s.EntityCount);
+                    CoopState.ApplyRemoteAliveHashes(s.AliveHashes, s.AliveHashCount);
                     if (ModConfig.Verbose.Value)
                         _log.LogDebug("rx state seq=" + s.Sequence + " p1=" + (s.P1.Present ? s.P1.X.ToString("F2") + "," + s.P1.Y.ToString("F2") : "-") +
                                       " p2=" + (s.P2.Present ? s.P2.X.ToString("F2") + "," + s.P2.Y.ToString("F2") : "-") +
@@ -158,7 +218,7 @@ namespace CupheadCoop.Net
             reader.Recycle();
         }
 
-        public void OnNetworkLatencyUpdate(NetPeer peer, int latency) { }
+        public void OnNetworkLatencyUpdate(NetPeer peer, int latency) { PingMs = latency; }
 
         public void OnConnectionRequest(ConnectionRequest request)
         {

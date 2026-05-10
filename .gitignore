@@ -7,9 +7,9 @@
 
 # packaged outputs — keep the shipped artifacts (plugin zip + Mac/Win bundles + docs) checked in.
 dist/*
-!dist/CupheadCoop-v0.7.1.zip
-!dist/CupheadCoop-mac-v0.7.1.tar.gz
-!dist/CupheadCoop-windows-v0.7.1.zip
+!dist/CupheadCoop-v0.8.0.zip
+!dist/CupheadCoop-mac-v0.8.0.tar.gz
+!dist/CupheadCoop-windows-v0.8.0.zip
 !dist/CLIENT-INSTRUCTIONS.md
 
 # temp / decompiled scratch

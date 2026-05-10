@@ -75,6 +75,9 @@ namespace CupheadCoop.Coop
         // M6 entity sync. Fixed-size buffer to avoid GC churn; RemoteEntityCount tracks valid slots.
         public static readonly EntitySnapshot[] RemoteEntities = new EntitySnapshot[EntitySync.MaxSyncedEntities];
         public static int RemoteEntityCount;
+        // M7 v8: full alive-hash list from host (separate from position-tracked entities).
+        public static readonly uint[] RemoteAliveHashes = new uint[EntitySync.MaxAliveHashes];
+        public static int RemoteAliveHashCount;
 
         // True only while Plugin.CaptureLocalInputForUpload is reading Rewired. The input gate
         // patches let the call through unchanged when this is set, but otherwise return zero
@@ -205,6 +208,14 @@ namespace CupheadCoop.Coop
             RemoteEntityCount = n;
             RemoteIsPaused = isPaused;
             RemoteSceneName = sceneName ?? "";
+        }
+
+        public static void ApplyRemoteAliveHashes(uint[] hashes, int count)
+        {
+            int n = count;
+            if (n > RemoteAliveHashes.Length) n = RemoteAliveHashes.Length;
+            for (int i = 0; i < n; i++) RemoteAliveHashes[i] = hashes[i];
+            RemoteAliveHashCount = n;
         }
 
         private static float Clamp(float v, float min, float max)

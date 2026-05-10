@@ -49,6 +49,9 @@ namespace CupheadCoop
             if (!Visible) return;
             EnsureStyles();
 
+            // Find Plugin singleton via scene to reach into host/client diagnostics.
+            var plugin = Object.FindObjectOfType<Plugin>();
+
             string mode = CoopState.Mode.ToString();
             string p1 = CoopState.RewiredPlayer1Id < 0 ? "?" : CoopState.RewiredPlayer1Id.ToString();
             string p2 = CoopState.RewiredPlayer2Id < 0 ? "?" : CoopState.RewiredPlayer2Id.ToString();
@@ -58,7 +61,23 @@ namespace CupheadCoop
             string ax = CoopState.AxisX.ToString("0.00") + "," + CoopState.AxisY.ToString("0.00");
             string forced = ModConfig.DebugForceP2WalkRight.Value ? "  [DEBUG: P2 walks right]" : "";
 
-            string line1 = "CupheadCoop v" + Plugin.Version + "  mode=" + mode +
+            // Connection/health summary on the right side of line 1
+            string netHealth = "";
+            if (plugin?.ClientInstance != null && CoopState.Mode == CoopMode.Client)
+            {
+                if (plugin.ClientInstance.Reconnecting)
+                    netHealth = "  [RECONNECTING in " + plugin.ClientInstance.SecondsUntilReconnect.ToString("0.0") + "s]";
+                else if (plugin.ClientInstance.Connected)
+                    netHealth = "  ping=" + plugin.ClientInstance.PingMs + "ms";
+                else
+                    netHealth = "  [DIALING]";
+            }
+            else if (plugin?.HostInstance != null && CoopState.Mode == CoopMode.Host)
+            {
+                netHealth = plugin.HostInstance.HasClient ? "  ping=" + plugin.HostInstance.PingMs + "ms" : "  [waiting for client]";
+            }
+
+            string line1 = "CupheadCoop v" + Plugin.Version + "  mode=" + mode + netHealth +
                            "  hotkeys: host=" + ModConfig.KeyHost.Value + " connect=" + ModConfig.KeyConnect.Value +
                            " disc=" + ModConfig.KeyDisconnect.Value + " hide=" + ModConfig.KeyToggleOverlay.Value + forced;
             string line2 = "rewired p1=" + p1 + " p2=" + p2 + "   net=" + remote +

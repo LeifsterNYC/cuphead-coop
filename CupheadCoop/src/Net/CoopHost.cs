@@ -22,6 +22,8 @@ namespace CupheadCoop.Net
         private readonly System.Diagnostics.Stopwatch _hostClock = System.Diagnostics.Stopwatch.StartNew();
 
         public bool Running => _net != null && _net.IsRunning;
+        public bool HasClient => _client != null && _client.ConnectionState == ConnectionState.Connected;
+        public int PingMs { get; private set; }
 
         public CoopHost(ManualLogSource log) { _log = log; }
 
@@ -105,7 +107,9 @@ namespace CupheadCoop.Net
                 IsPaused = PauseSync.LocalIsPaused,
                 SceneName = SceneSync.LocalSceneName,
                 EntityCount = (byte)entityCount,
-                Entities = EntitySync.HostBuffer
+                Entities = EntitySync.HostBuffer,
+                AliveHashCount = (ushort)EntitySync.AliveHashesCount,
+                AliveHashes = EntitySync.AliveHashesBuffer
             };
 
             var w = new NetDataWriter();
@@ -139,6 +143,11 @@ namespace CupheadCoop.Net
             var w = new NetDataWriter();
             new WelcomePacket { Version = Protocol.Version, Accepted = true, Reason = "" }.Write(w);
             peer.Send(w, DeliveryMethod.ReliableOrdered);
+
+            // Auto-join P2 on host so the client's input can drive a real cup. Without this,
+            // host's P2 doesn't exist (no controller plugged in on host's PC) and our network
+            // input has no recipient. Deferred to next main-thread tick — see P2AutoJoin.
+            P2AutoJoin.Trigger();
         }
 
         public void OnPeerDisconnected(NetPeer peer, DisconnectInfo disconnectInfo)
@@ -185,7 +194,7 @@ namespace CupheadCoop.Net
             reader.Recycle();
         }
 
-        public void OnNetworkLatencyUpdate(NetPeer peer, int latency) { }
+        public void OnNetworkLatencyUpdate(NetPeer peer, int latency) { PingMs = latency; }
 
         private static byte[] Encode(string s)
         {

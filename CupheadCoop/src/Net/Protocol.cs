@@ -16,7 +16,8 @@ namespace CupheadCoop.Net
         // v5 = M8 PlayerSnapshot extended with Hp + IsDead
         // v6 = pause sync — StateSnapshot now carries an IsPaused bit
         // v7 = M11 scene sync — StateSnapshot carries the host's active scene name
-        public const int Version = 7;
+        // v8 = M7 alive-hash list (client can SetActive(false) on entities host has killed)
+        public const int Version = 8;
     }
 
     internal enum PacketType : byte
@@ -202,9 +203,16 @@ namespace CupheadCoop.Net
         public PlayerSnapshot P1;
         public PlayerSnapshot P2;
         public bool IsPaused;
-        public string SceneName;          // v7: host's active Unity scene name (e.g. "scene_level_veggies")
+        public string SceneName;
         public byte EntityCount;
         public EntitySnapshot[] Entities;
+        // v8: list of all path-hashes the host considers alive THIS frame. Client deactivates
+        // any cached entity whose hash isn't in here, so projectiles that despawned and
+        // enemies that died on the host disappear on the client without waiting for the next
+        // 500ms cache refresh. Up to 256 hashes (1 KB) — projectile count under fire can be
+        // higher than the 64 we track positions for.
+        public ushort AliveHashCount;
+        public uint[] AliveHashes;
 
         public void Write(NetDataWriter w)
         {
@@ -217,6 +225,8 @@ namespace CupheadCoop.Net
             w.Put(SceneName ?? "");
             w.Put(EntityCount);
             for (int i = 0; i < EntityCount; i++) Entities[i].Write(w);
+            w.Put(AliveHashCount);
+            for (int i = 0; i < AliveHashCount; i++) w.Put(AliveHashes[i]);
         }
 
         public static StateSnapshot Read(NetDataReader r)
@@ -233,6 +243,9 @@ namespace CupheadCoop.Net
             };
             s.Entities = s.EntityCount > 0 ? new EntitySnapshot[s.EntityCount] : null;
             for (int i = 0; i < s.EntityCount; i++) s.Entities[i] = EntitySnapshot.Read(r);
+            s.AliveHashCount = r.GetUShort();
+            s.AliveHashes = s.AliveHashCount > 0 ? new uint[s.AliveHashCount] : null;
+            for (int i = 0; i < s.AliveHashCount; i++) s.AliveHashes[i] = r.GetUInt();
             return s;
         }
     }

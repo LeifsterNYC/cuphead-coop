@@ -293,6 +293,10 @@ namespace CupheadCoop.Coop
                 if (animHash != 0 && targetAnim != null && targetAnim.isActiveAndEnabled
                     && targetAnim.runtimeAnimatorController != null)
                 {
+                    // Register this animator with the parameter-block patches so the local
+                    // sim can't fight our forced state via SetFloat/SetTrigger/etc.
+                    AnimatorParamPatches.RegisterSuppressed(targetAnim);
+
                     var current = targetAnim.GetCurrentAnimatorStateInfo(0);
                     if (current.fullPathHash != animHash)
                     {

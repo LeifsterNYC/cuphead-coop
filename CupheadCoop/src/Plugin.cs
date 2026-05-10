@@ -1,5 +1,6 @@
 using System;
 using BepInEx;
+using BepInEx.Logging;
 using CupheadCoop.Coop;
 using CupheadCoop.Net;
 using HarmonyLib;
@@ -17,12 +18,19 @@ namespace CupheadCoop
     public class Plugin : BaseUnityPlugin
     {
         public const string GUID = "leif.cupheadcoop";
-        public const string Version = "0.7.6";
+        public const string Version = "0.8.0";
 
         private Harmony _harmony;
         private CoopHost _host;
         private CoopClient _client;
         private CoopOverlay _overlay;
+        private CoopLateApply _lateApply;
+
+        // Exposed so the overlay + late-apply component can reach in for diagnostic data
+        // without us building a sprawling read-only properties layer.
+        internal CoopHost HostInstance => _host;
+        internal CoopClient ClientInstance => _client;
+        internal static BepInEx.Logging.ManualLogSource LogStatic;
 
         private void Awake()
         {
@@ -30,6 +38,7 @@ namespace CupheadCoop
             // If a static-init or sceneLoaded subscription failure kills Awake silently,
             // the absence of this line is a definitive signal.
             Logger.LogInfo("CupheadCoop " + Version + " loading…");
+            LogStatic = Logger;
 
             try
             {
@@ -38,6 +47,7 @@ namespace CupheadCoop
                 ScenePuppetry.Log = Logger;
                 EntitySync.Log = Logger;
                 SceneSync.Log = Logger;
+                P2AutoJoin.Log = Logger;
                 EntitySync.Wire();
                 LogTap.Wire();
                 Application.runInBackground = true;
@@ -69,6 +79,16 @@ namespace CupheadCoop
                 Logger.LogError("Overlay attach failed: " + ex);
             }
 
+            try
+            {
+                _lateApply = gameObject.AddComponent<CoopLateApply>();
+                _lateApply.Owner = this;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("CoopLateApply attach failed: " + ex);
+            }
+
             Logger.LogInfo("Press " + ModConfig.KeyHost.Value + " to host, " + ModConfig.KeyConnect.Value +
                            " to connect to " + ModConfig.RemoteHost.Value + ":" + ModConfig.Port.Value +
                            ", " + ModConfig.KeyDisconnect.Value + " to disconnect.");
@@ -90,40 +110,16 @@ namespace CupheadCoop
 
             _host?.Pump();
             _client?.Pump(Time.unscaledDeltaTime);
+
+            // Run any deferred main-thread reflection actions queued by the network layer.
+            // Both host and client may have queued a P2 auto-join.
+            if (CoopState.Mode != CoopMode.Off)
+                P2AutoJoin.TickIfPending();
         }
 
-        private void LateUpdate()
-        {
-            // M4 visual sync runs in LateUpdate — after Cuphead's own Update has moved players.
-            // Host: sample P1/P2 transforms now, then ship via the network pump.
-            // Client: overwrite local transforms with the host's last-received snapshot so the
-            // rendered frame matches what the host sees.
-            if (CoopState.Mode == CoopMode.Host)
-            {
-                EntitySync.Tick(Time.unscaledDeltaTime);
-                ScenePuppetry.HostCapture();
-                PauseSync.HostCapture();
-                SceneSync.HostCapture();
-                _host?.TickStateSnapshot(Time.unscaledDeltaTime);
-            }
-            else if (CoopState.Mode == CoopMode.Client)
-            {
-                // Scene sync FIRST — if we need to load a different scene, do it before
-                // touching anything else this frame.
-                if (ModConfig.EnableSceneSync.Value)
-                    SceneSync.ApplyFromHost(CoopState.RemoteSceneName);
-                EntitySync.Tick(Time.unscaledDeltaTime);
-                ScenePuppetry.ClientApply();
-                if (ModConfig.EnableEntitySync.Value)
-                    EntitySync.ApplyToClient(CoopState.RemoteEntities, CoopState.RemoteEntityCount);
-                if (ModConfig.EnablePauseSync.Value)
-                    PauseSync.ApplyFromHost(CoopState.RemoteIsPaused);
-            }
-
-            // Edge detection lives in CoopState — snapshot at end of frame so next frame's
-            // GetButtonDown/Up postfixes can compute deltas.
-            CoopState.AdvanceFrame();
-        }
+        // LateUpdate moved into CoopLateApply (separate component with [DefaultExecutionOrder(+32000)])
+        // so it runs AFTER Cuphead's animator and physics writers, instead of before. Plugin keeps
+        // its negative execution order purely so Update gets the network packets first.
 
         private void HandleHotkeys()
         {

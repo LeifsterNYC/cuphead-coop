@@ -36,6 +36,14 @@ $argList   = @("-screen-fullscreen", "0", "-screen-width", "$Width", "-screen-he
 if (-not (Test-Path $hostExe))   { Write-Error "Host Cuphead.exe not found at $hostExe";     exit 1 }
 if (-not (Test-Path $clientExe)) { Write-Error "Client Cuphead.exe not found at $clientExe"; exit 1 }
 
+# Kill any previous Cuphead instances so re-running the script doesn't stack windows.
+$existing = Get-Process -Name "Cuphead" -ErrorAction SilentlyContinue
+if ($existing) {
+    Write-Host "Stopping $($existing.Count) existing Cuphead instance(s)..."
+    $existing | ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
+    Start-Sleep -Milliseconds 500
+}
+
 function Start-PersistentReposition {
     # Re-applies SetWindowPos every 500ms for 15s in a background runspace, so the position
     # sticks regardless of when Unity finishes its own startup window-init (which can override

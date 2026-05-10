@@ -24,7 +24,7 @@ namespace CupheadCoop.Coop
     /// </summary>
     internal static class EntitySync
     {
-        public const int MaxSyncedEntities = 32;
+        public const int MaxSyncedEntities = 64;
 
         public static ManualLogSource Log;
 
@@ -46,15 +46,20 @@ namespace CupheadCoop.Coop
         // across frames to avoid per-frame allocations on the hot path.
         public static readonly EntitySnapshot[] HostBuffer = new EntitySnapshot[MaxSyncedEntities];
 
+        // Larger buffer for "alive but maybe not position-tracked" entity hashes. Sent to
+        // client so it can deactivate locally any entity not in this set.
+        public const int MaxAliveHashes = 256;
+        public static readonly uint[] AliveHashesBuffer = new uint[MaxAliveHashes];
+        public static int AliveHashesCount;
+
         // Diagnostic counters surfaced by the in-game overlay.
         public static int LastCapturedCount;
         public static int CacheSize => _byPath.Count;
 
-        // Periodic re-walk cadence. Phase-transition bosses, mid-level spawns of stationary
-        // animated objects, and any add/remove the sceneLoaded callback misses get picked up
-        // here. ~2s is short enough that desyncs are brief and long enough that the cost is
-        // negligible (~25ms × 0.5/s).
-        private const float RefreshIntervalSec = 2f;
+        // Periodic re-walk cadence. Tightened from 2s to 0.5s now that we also track
+        // AbstractProjectile — projectiles are short-lived (sub-second), so a 2s interval
+        // would miss most of them. Cost: ~30ms × 2/s = ~6% of one frame budget. Acceptable.
+        private const float RefreshIntervalSec = 0.5f;
         private static float _secondsSinceRefresh;
 
         public static void Wire()
@@ -94,30 +99,21 @@ namespace CupheadCoop.Coop
             _byPath.Clear();
             try
             {
-                // FindObjectsOfType is allocation-heavy but only runs at scene transitions.
-                var entities = Object.FindObjectsOfType<AbstractLevelEntity>();
                 int kept = 0, skipped = 0;
-                foreach (var ent in entities)
-                {
-                    if (ent == null) continue;
-                    var go = ent.gameObject;
-                    if (go == null || !go.activeInHierarchy) { skipped++; continue; }
 
-                    // Filter to entities with at least one Animator anywhere below them.
-                    // Cuts out coins, parry-pickups, audio-only objects, etc.
-                    var animator = ent.GetComponentInChildren<Animator>();
-                    if (animator == null) { skipped++; continue; }
+                // Layer 1: scene-loaded gameplay entities. Catches bosses, scenery animations,
+                // mini-bosses, set pieces. Path-hash works because these are stable scene objects.
+                var entities = Object.FindObjectsOfType<AbstractLevelEntity>();
+                foreach (var ent in entities) { if (TryAdd(ent?.gameObject, ref kept, ref skipped, "le")) {} }
 
-                    var t = ent.transform;
-                    string path = ComputePath(t);
-                    uint hash = Fnv1a32(path);
+                // Layer 2: projectiles (boss attacks, player shots, mob shots). Runtime-spawned
+                // clones — path-hash uses sibling index instead of name to disambiguate, so the
+                // first projectile fired by a given parent on host hashes to the same value as
+                // the first projectile fired by the same parent on client (assuming spawn order
+                // is deterministic, which it is when boss AI animation states match).
+                var projectiles = Object.FindObjectsOfType<AbstractProjectile>();
+                foreach (var p in projectiles) { if (TryAdd(p?.gameObject, ref kept, ref skipped, "p")) {} }
 
-                    // Collisions: last write wins. Both sides will agree if both walk the scene
-                    // in the same Unity-internal order, which is deterministic per build.
-                    _byPath[hash] = new EntityRef { Transform = t, Animator = animator, Path = path };
-                    kept++;
-                }
-                _cacheValid = true;
                 string scene = SceneManager.GetActiveScene().name;
                 // Only log when the count or scene changed — periodic refresh in a stable scene
                 // would otherwise dump an identical line into the overlay tail every 2s.
@@ -155,13 +151,22 @@ namespace CupheadCoop.Coop
         public static void CaptureForHost(out int count)
         {
             count = 0;
+            AliveHashesCount = 0;
             if (!_cacheValid) { LastCapturedCount = 0; return; }
 
             foreach (var kvp in _byPath)
             {
-                if (count >= MaxSyncedEntities) break;
                 var er = kvp.Value;
                 if (er.Transform == null) continue; // entity destroyed since last refresh
+                if (!er.Transform.gameObject.activeInHierarchy) continue;
+
+                // Track alive hash regardless of whether we can fit positions in the snapshot.
+                if (AliveHashesCount < MaxAliveHashes)
+                {
+                    AliveHashesBuffer[AliveHashesCount++] = kvp.Key;
+                }
+
+                if (count >= MaxSyncedEntities) continue; // alive-tracked but no position slot
 
                 int animHash = 0;
                 float animTime = 0f;
@@ -196,6 +201,35 @@ namespace CupheadCoop.Coop
         /// dropped — that handles brief desyncs during scene transitions and runtime-spawned
         /// entities the host can sample but we can't.
         /// </summary>
+        public static void ApplyAliveSet(uint[] aliveHashes, int aliveCount)
+        {
+            if (!_cacheValid || aliveHashes == null || aliveCount == 0) return;
+
+            // Build a lookup set of host-alive hashes.
+            var alive = new HashSet<uint>();
+            for (int i = 0; i < aliveCount; i++) alive.Add(aliveHashes[i]);
+
+            // For each cached entity, if its hash isn't in the alive set AND its GameObject is
+            // currently active, deactivate it. This collapses host-killed enemies / despawned
+            // projectiles on the client immediately rather than waiting for the next refresh.
+            foreach (var kvp in _byPath)
+            {
+                var er = kvp.Value;
+                if (er.Transform == null) continue;
+                var go = er.Transform.gameObject;
+                if (go == null) continue;
+                if (alive.Contains(kvp.Key))
+                {
+                    // Should be alive — re-activate if local sim turned it off.
+                    if (!go.activeSelf) go.SetActive(true);
+                }
+                else
+                {
+                    if (go.activeSelf) go.SetActive(false);
+                }
+            }
+        }
+
         public static void ApplyToClient(EntitySnapshot[] snapshots, int count)
         {
             if (!_cacheValid) return;
@@ -238,15 +272,29 @@ namespace CupheadCoop.Coop
             }
         }
 
-        /// <summary>Hierarchy path from scene root: "Root/Child/Grandchild".</summary>
+        /// <summary>
+        /// Hierarchy path from scene root. For stable scene objects, uses GameObject names.
+        /// For runtime clones (anything whose name contains "(Clone)"), substitutes the
+        /// sibling-index of the GameObject under its parent, so two same-name clones can be
+        /// disambiguated. Both host and client compute paths the same way; spawn order on each
+        /// side is deterministic when M5/M6 keep animator states aligned, so the sibling
+        /// indices line up and same-projectile-on-both-sides gets the same hash.
+        /// </summary>
         private static string ComputePath(Transform t)
         {
-            // Walk up to the root, collecting names, then join in reverse.
             var stack = new Stack<string>(8);
             var cur = t;
             while (cur != null)
             {
-                stack.Push(cur.name);
+                if (cur.name.IndexOf("(Clone)", System.StringComparison.Ordinal) >= 0 && cur.parent != null)
+                {
+                    // Use sibling index; this is the projectile/clone case.
+                    stack.Push("[" + cur.GetSiblingIndex() + "]");
+                }
+                else
+                {
+                    stack.Push(cur.name);
+                }
                 cur = cur.parent;
             }
             var sb = new StringBuilder(64);
@@ -257,6 +305,21 @@ namespace CupheadCoop.Coop
                 sb.Append(stack.Pop());
             }
             return sb.ToString();
+        }
+
+        // Helper used by RefreshCache layers. Adds a GameObject to the cache if it has a
+        // descendant Animator. Returns true if added.
+        private static bool TryAdd(GameObject go, ref int kept, ref int skipped, string layerTag)
+        {
+            if (go == null) return false;
+            if (!go.activeInHierarchy) { skipped++; return false; }
+            var animator = go.GetComponentInChildren<Animator>();
+            if (animator == null) { skipped++; return false; }
+            string path = ComputePath(go.transform);
+            uint hash = Fnv1a32(path);
+            _byPath[hash] = new EntityRef { Transform = go.transform, Animator = animator, Path = path };
+            if (kept < MaxSyncedEntities) kept++;
+            return true;
         }
 
         /// <summary>
