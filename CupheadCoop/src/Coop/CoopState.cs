@@ -82,6 +82,26 @@ namespace CupheadCoop.Coop
         public static readonly ProjectileSnapshot[] RemoteProjectiles = new ProjectileSnapshot[ProjectileSync.MaxSyncedProjectiles];
         public static int RemoteProjectileCount;
 
+        // v10 input mirror — per-player buttons + axes streamed by host so client's local
+        // Rewired reads can return host's actual inputs instead of zero. P1 mirror is what
+        // host's local P1 was pressing this frame; P2 mirror is what host's P2 was pressing
+        // (which on host's side is the round-tripped client keyboard input).
+        // Edge state: to support GetButtonDown/Up correctly on client, we maintain
+        // PressedThisFrame accumulator + Previous-frame snapshot, mirroring the existing
+        // CurrentButtons/PreviousButtons/PressedThisFrame pattern but per-player.
+        public static uint MirroredP1Buttons;
+        public static uint PreviousMirroredP1Buttons;
+        public static uint PressedP1ThisFrame;
+        public static float MirroredP1AxisX;
+        public static float MirroredP1AxisY;
+        private static uint _prevSeenP1Buttons;
+        public static uint MirroredP2Buttons;
+        public static uint PreviousMirroredP2Buttons;
+        public static uint PressedP2ThisFrame;
+        public static float MirroredP2AxisX;
+        public static float MirroredP2AxisY;
+        private static uint _prevSeenP2Buttons;
+
         // True only while Plugin.CaptureLocalInputForUpload is reading Rewired. The input gate
         // patches let the call through unchanged when this is set, but otherwise return zero
         // for client-mode Cupheads so the local sim doesn't react to keyboard input that's
@@ -122,6 +142,83 @@ namespace CupheadCoop.Coop
         {
             PreviousButtons = CurrentButtons;
             PressedThisFrame = 0;
+        }
+
+        /// <summary>
+        /// v10 mirror edge advance — same idea as <see cref="AdvanceFrame"/> but for the
+        /// per-player input mirrors used by client's local sim. Called once per frame from
+        /// CoopLateApply alongside AdvanceFrame so PressedP1/P2ThisFrame are zeroed and
+        /// Previous tracks Current.
+        /// </summary>
+        public static void AdvanceClientInputs()
+        {
+            PreviousMirroredP1Buttons = MirroredP1Buttons;
+            PreviousMirroredP2Buttons = MirroredP2Buttons;
+            PressedP1ThisFrame = 0;
+            PressedP2ThisFrame = 0;
+        }
+
+        /// <summary>
+        /// Apply a fresh per-player input snapshot received from the host. Mirrors the
+        /// <see cref="ApplyRemoteFrame"/> "newly-pressed" accumulator pattern so multiple
+        /// snapshots arriving within a single frame don't lose transient down-edges.
+        /// </summary>
+        public static void ApplyMirroredInputs(uint p1Buttons, float p1AxisX, float p1AxisY,
+                                                uint p2Buttons, float p2AxisX, float p2AxisY)
+        {
+            uint newlyP1 = p1Buttons & ~_prevSeenP1Buttons;
+            PressedP1ThisFrame |= newlyP1;
+            _prevSeenP1Buttons = p1Buttons;
+            MirroredP1Buttons = p1Buttons;
+            MirroredP1AxisX = Clamp(p1AxisX, -1f, 1f);
+            MirroredP1AxisY = Clamp(p1AxisY, -1f, 1f);
+
+            uint newlyP2 = p2Buttons & ~_prevSeenP2Buttons;
+            PressedP2ThisFrame |= newlyP2;
+            _prevSeenP2Buttons = p2Buttons;
+            MirroredP2Buttons = p2Buttons;
+            MirroredP2AxisX = Clamp(p2AxisX, -1f, 1f);
+            MirroredP2AxisY = Clamp(p2AxisY, -1f, 1f);
+        }
+
+        // Per-player mirror queries used by RewiredPatches when Mode == Client. Mirrors the
+        // existing IsButtonHeld/Down/Up signatures but read from the P1/P2 mirror slots
+        // instead of the global Current/Previous/PressedThisFrame.
+        public static bool IsClientP1ButtonHeld(int actionId)
+        {
+            if (actionId < 0 || actionId >= 32) return false;
+            return ((MirroredP1Buttons >> actionId) & 1u) != 0u;
+        }
+        public static bool IsClientP1ButtonDown(int actionId)
+        {
+            if (actionId < 0 || actionId >= 32) return false;
+            uint bit = 1u << actionId;
+            return ((PressedP1ThisFrame & bit) != 0u)
+                || ((MirroredP1Buttons & bit) != 0u && (PreviousMirroredP1Buttons & bit) == 0u);
+        }
+        public static bool IsClientP1ButtonUp(int actionId)
+        {
+            if (actionId < 0 || actionId >= 32) return false;
+            uint bit = 1u << actionId;
+            return (MirroredP1Buttons & bit) == 0u && (PreviousMirroredP1Buttons & bit) != 0u;
+        }
+        public static bool IsClientP2ButtonHeld(int actionId)
+        {
+            if (actionId < 0 || actionId >= 32) return false;
+            return ((MirroredP2Buttons >> actionId) & 1u) != 0u;
+        }
+        public static bool IsClientP2ButtonDown(int actionId)
+        {
+            if (actionId < 0 || actionId >= 32) return false;
+            uint bit = 1u << actionId;
+            return ((PressedP2ThisFrame & bit) != 0u)
+                || ((MirroredP2Buttons & bit) != 0u && (PreviousMirroredP2Buttons & bit) == 0u);
+        }
+        public static bool IsClientP2ButtonUp(int actionId)
+        {
+            if (actionId < 0 || actionId >= 32) return false;
+            uint bit = 1u << actionId;
+            return (MirroredP2Buttons & bit) == 0u && (PreviousMirroredP2Buttons & bit) != 0u;
         }
 
         public static void ApplyRemoteFrame(uint sequence, uint buttons, float axisX, float axisY)
@@ -175,6 +272,18 @@ namespace CupheadCoop.Coop
             RemoteIsPaused = false;
             RemoteSceneName = "";
             RemoteProjectileCount = 0;
+            MirroredP1Buttons = 0;
+            PreviousMirroredP1Buttons = 0;
+            PressedP1ThisFrame = 0;
+            MirroredP1AxisX = 0f;
+            MirroredP1AxisY = 0f;
+            _prevSeenP1Buttons = 0;
+            MirroredP2Buttons = 0;
+            PreviousMirroredP2Buttons = 0;
+            PressedP2ThisFrame = 0;
+            MirroredP2AxisX = 0f;
+            MirroredP2AxisY = 0f;
+            _prevSeenP2Buttons = 0;
             ProjectileSync.Reset();
         }
 
@@ -213,6 +322,11 @@ namespace CupheadCoop.Coop
             RemoteEntityCount = n;
             RemoteIsPaused = isPaused;
             RemoteSceneName = sceneName ?? "";
+
+            // v10: extract per-player input mirrors so client's local Rewired reads can
+            // return host's actual inputs.
+            ApplyMirroredInputs(p1.Buttons, p1.UnpackAxisX, p1.UnpackAxisY,
+                                p2.Buttons, p2.UnpackAxisX, p2.UnpackAxisY);
         }
 
         public static void ApplyRemoteAliveHashes(uint[] hashes, int count)

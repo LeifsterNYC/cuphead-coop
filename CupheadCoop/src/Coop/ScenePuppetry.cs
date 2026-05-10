@@ -36,6 +36,19 @@ namespace CupheadCoop.Coop
         public static sbyte LocalP2Hp;
         public static bool LocalP2IsDead;
 
+        // v10: per-player Rewired input snapshot, sampled by HostCapture and shipped in
+        // PlayerSnapshot so client's local sim can read what host was reading. P1 = host's
+        // local controller/keyboard. P2 = the network input forwarded from client (which
+        // host has already applied to CoopState.CurrentButtons via ApplyRemoteFrame, so we
+        // re-read it from there rather than re-deriving from P2's Rewired (which on host
+        // is overridden by our own postfix anyway).
+        public static uint LocalP1Buttons;
+        public static sbyte LocalP1AxisX_q;
+        public static sbyte LocalP1AxisY_q;
+        public static uint LocalP2Buttons;
+        public static sbyte LocalP2AxisX_q;
+        public static sbyte LocalP2AxisY_q;
+
         // Throttled diagnostic — log "why is P1/P2 not present" once every ~2s while the
         // host has a connected peer, so testers can tell the difference between "wrong scene"
         // and "transform-find broken".
@@ -48,6 +61,7 @@ namespace CupheadCoop.Coop
         /// </summary>
         public static void HostCapture()
         {
+            CaptureInputs();
             string p1Why;
             var p1 = SafeGetPlayerSnapshot(global::PlayerId.PlayerOne, out var f1, out var ah1, out var at1,
                                            out var hp1, out var d1, out p1Why);
@@ -247,6 +261,71 @@ namespace CupheadCoop.Coop
                 }
                 return _setHealth;
             }
+        }
+
+        // v10: sample host-side Rewired inputs once per snapshot tick. Packs into the
+        // LocalP1/P2 input fields above which CoopHost.TickStateSnapshot then ships in
+        // PlayerSnapshot.Buttons/Axes.
+        // - P1: host's local controller / keyboard. Read directly from
+        //   CoopState.LocalPlayer1 (the captured Rewired.Player from PlayerInput.Init).
+        //   Set IsCapturingLocalInput so RewiredFocusGate's read-side gates don't apply
+        //   here (we want raw local input, not anything mirrored from elsewhere).
+        // - P2: on host, P2's Rewired reads are OVERRIDDEN by our own RewiredPatches
+        //   postfix to return CoopState.CurrentButtons. So we re-read from CoopState
+        //   directly rather than going through Rewired.Player and risking circular
+        //   override resolution. Same for axes.
+        private static void CaptureInputs()
+        {
+            try
+            {
+                var p1 = CoopState.LocalPlayer1;
+                if (p1 != null)
+                {
+                    bool prevFlag = CoopState.IsCapturingLocalInput;
+                    CoopState.IsCapturingLocalInput = true;
+                    try
+                    {
+                        uint btns = 0;
+                        for (int actionId = 0; actionId < 28; actionId++)
+                            if (p1.GetButton(actionId)) btns |= (1u << actionId);
+                        LocalP1Buttons = btns;
+                        LocalP1AxisX_q = ToFixed(p1.GetAxis(0));
+                        LocalP1AxisY_q = ToFixed(p1.GetAxis(1));
+                    }
+                    finally { CoopState.IsCapturingLocalInput = prevFlag; }
+                }
+                else
+                {
+                    LocalP1Buttons = 0;
+                    LocalP1AxisX_q = 0;
+                    LocalP1AxisY_q = 0;
+                }
+
+                // P2 = the network-applied client input. CoopState already holds it from
+                // CoopHost.OnNetworkReceive → ApplyRemoteFrame. Just forward it.
+                LocalP2Buttons = CoopState.CurrentButtons;
+                LocalP2AxisX_q = ToFixed(CoopState.AxisX);
+                LocalP2AxisY_q = ToFixed(CoopState.AxisY);
+            }
+            catch
+            {
+                // If anything throws (e.g., scene transition with player not yet wired), zero
+                // out and try again next tick.
+                LocalP1Buttons = 0;
+                LocalP1AxisX_q = 0;
+                LocalP1AxisY_q = 0;
+                LocalP2Buttons = 0;
+                LocalP2AxisX_q = 0;
+                LocalP2AxisY_q = 0;
+            }
+        }
+
+        private static sbyte ToFixed(float v)
+        {
+            int x = (int)(v * 100f);
+            if (x < -100) x = -100;
+            if (x > 100) x = 100;
+            return (sbyte)x;
         }
 
         private static void ApplyTo(global::PlayerId id, float x, float y, sbyte facing,

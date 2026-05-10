@@ -19,7 +19,13 @@ namespace CupheadCoop.Net
         // v8 = M7 alive-hash list (client can SetActive(false) on entities host has killed)
         // v9 = M7 v2 NetworkID-based projectile sync — StateSnapshot carries a ProjectileSnapshot[]
         //      with synthetic host-assigned IDs, replacing the broken path-hash-for-clones approach
-        public const int Version = 9;
+        // v10 = input mirroring — PlayerSnapshot now carries the actual per-frame input
+        //       (Buttons + Axes) for each player, so client's local sim can run with host's
+        //       inputs. Without this, client's P1 has no input source and never fires weapons,
+        //       so player projectiles never spawn locally for binding. With this, client's local
+        //       sim produces approximately the same state as host, and NetworkID + transform
+        //       streams correct any drift.
+        public const int Version = 10;
     }
 
     internal enum PacketType : byte
@@ -112,6 +118,14 @@ namespace CupheadCoop.Net
     /// integer derived from the state's full path inside the Animator Controller. The
     /// hashing function is part of the Unity Animation system's stable contract, so the
     /// hash is the same on host and client as long as both run the same Cuphead build.
+    ///
+    /// v10: also carries the player's per-frame Rewired input (Buttons bitmask + axes).
+    /// On client, RewiredFocusGate substitutes these into Rewired.Player.GetButton/GetAxis
+    /// so the client's local sim reads what the host was reading. Without this, client's
+    /// P1 has no input source (its keyboard is gated to prevent local-sim conflicts on
+    /// solo two-instance setups), so it never fires weapons, never walks, never triggers
+    /// progression-based spawns. With this, both sides run the same simulation with the
+    /// same inputs and produce nearly identical results.
     /// </summary>
     internal struct PlayerSnapshot
     {
@@ -123,6 +137,12 @@ namespace CupheadCoop.Net
         public float AnimNormalizedTime;
         public sbyte Hp;       // -1 = unknown; 0+ = current HP. Cuphead's max is single digits so 1 byte suffices.
         public bool IsDead;
+        public uint Buttons;   // v10: Rewired button bitmask, bit n = action id n (0..27 used by Cuphead).
+        public sbyte AxisX_q;  // v10: -100..+100 fixed-point quantization, same scheme as InputFrame.AxisX.
+        public sbyte AxisY_q;
+
+        public float UnpackAxisX => AxisX_q / 100f;
+        public float UnpackAxisY => AxisY_q / 100f;
 
         public void Write(NetDataWriter w)
         {
@@ -134,6 +154,9 @@ namespace CupheadCoop.Net
             w.Put(AnimNormalizedTime);
             w.Put(Hp);
             w.Put(IsDead);
+            w.Put(Buttons);
+            w.Put(AxisX_q);
+            w.Put(AxisY_q);
         }
 
         public static PlayerSnapshot Read(NetDataReader r)
@@ -147,7 +170,10 @@ namespace CupheadCoop.Net
                 AnimStateHash = r.GetInt(),
                 AnimNormalizedTime = r.GetFloat(),
                 Hp = r.GetSByte(),
-                IsDead = r.GetBool()
+                IsDead = r.GetBool(),
+                Buttons = r.GetUInt(),
+                AxisX_q = r.GetSByte(),
+                AxisY_q = r.GetSByte()
             };
         }
     }

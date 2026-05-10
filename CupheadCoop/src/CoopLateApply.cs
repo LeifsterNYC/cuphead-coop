@@ -55,8 +55,11 @@ namespace CupheadCoop
 
             // Edge detection — snapshot at end of frame so next frame's GetButtonDown/Up
             // postfixes can compute deltas. Must happen after the network pump's
-            // ApplyRemoteFrame on host (which set CurrentButtons earlier in the frame).
+            // ApplyRemoteFrame on host (which set CurrentButtons earlier in the frame)
+            // and any ApplyMirroredInputs on client (which sets MirroredP1/P2 from
+            // host's StateSnapshot earlier in the frame).
             CoopState.AdvanceFrame();
+            CoopState.AdvanceClientInputs();
         }
     }
 }

@@ -86,7 +86,7 @@ net.Stop();
 return 0;
 
 /// <summary>Wire-protocol version we claim. Must match Net/Protocol.cs in the plugin.</summary>
-static class Proto { public const int Version = 9; }
+static class Proto { public const int Version = 10; }
 
 enum InputPattern { WalkRight, WalkLeft, Jump, Idle }
 
@@ -175,6 +175,9 @@ class Listener : INetEventListener
                 /* p1AnimT */     reader.GetFloat();
                 LastP1Hp          = reader.GetSByte();
                 /* p1IsDead */    reader.GetBool();
+                /* p1Buttons */   reader.GetUInt();   // v10
+                /* p1AxisX_q */   reader.GetSByte();  // v10
+                /* p1AxisY_q */   reader.GetSByte();  // v10
                 LastP2Present     = reader.GetBool();
                 LastP2X           = reader.GetFloat();
                 LastP2Y           = reader.GetFloat();
@@ -183,6 +186,9 @@ class Listener : INetEventListener
                 /* p2AnimT */     reader.GetFloat();
                 LastP2Hp          = reader.GetSByte();
                 /* p2IsDead */    reader.GetBool();
+                /* p2Buttons */   reader.GetUInt();   // v10
+                /* p2AxisX_q */   reader.GetSByte();  // v10
+                /* p2AxisY_q */   reader.GetSByte();  // v10
                 /* isPaused */    reader.GetBool();
                 /* sceneName */   reader.GetString();
                 LastEntityCount   = reader.GetByte();
