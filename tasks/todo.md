@@ -57,3 +57,17 @@ Target: precision-platformer-acceptable feel (~50ms perceived lag for remote pla
 
 ## Review (per milestone, append below)
 
+### M1 — input intercept (verified)
+ForceP2WalkRight test: P2's cup walked right autonomously in local 2P co-op. Harmony postfixes on `Rewired.Player.GetAxis(int)` land cleanly. Rewired discovery via `PlayerInput.Init` postfix is deterministic — both P1 and P2 ids resolved on first level entry.
+
+### M2/M3 — transport + input streaming (verified)
+Single-PC mock-client test: handshake completes (`handshake ok (v3)`), input frames flow at 60 Hz, mock client's walk-right pattern moves the host's P2. Sidestepped LiteNetLib NatPunchModule's System.Runtime.Serialization dependency by Harmony-skipping its constructor.
+
+### M4 — visual sync v1 (partially verified)
+StateSnapshot stream from host to client works (mock client receives `rx state seq=N`). When window loses focus, Update pauses — fixed by `Application.runInBackground = true`. ScenePuppetry's player-position capture only succeeds in actual gameplay levels (not menus / file select); diagnostic logging now reports `DoesPlayerExist=false` etc. clearly.
+
+### M5 — animation sync (shipped, awaiting in-game verification)
+PlayerSnapshot extended with Animator state hash + normalized time. Protocol bumped to v3. Client calls `Animator.Play(hash, 0, time)` only on state changes or significant phase drift, avoiding per-frame stutter resets.
+
+### M6 — entity sync (designed, not implemented)
+See `tasks/M6-design.md`. Scoped to scene-loaded `AbstractLevelEntity` instances with descendant Animators. Path-hash identification (FNV1a32). v1 doesn't cover spawned projectiles or phase-transition objects.
