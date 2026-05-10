@@ -84,7 +84,18 @@ PlayerSnapshot extended with Animator state hash + normalized time. Protocol bum
 5. With a real Mac client, the boss should mirror visually.
 
 ### Open after M6
-- M7: runtime-spawn entity sync (projectiles, summoned mobs, phase-2 boss instantiations). Hardest.
-- M8: HP/death/score sync.
-- M9: suppress client-side sim influence so host is fully authoritative for damage too.
-- Pause/menu sync.
+- M7: runtime-spawn entity sync (projectiles, summoned mobs, phase-2 boss instantiations). See `tasks/M7-design.md`. Recommendation: try option (C) — do nothing, see if it's good enough — before investing in spawn-event plumbing.
+- M8.5: apply IsDead on client (mirror death animation). Not as simple as calling `OnDeath()` — see lesson in `tasks/lessons.md`.
+- M10: stream boss HP / phase events.
+- Polish: reconnect handling, in-game UI, audio cue events, level-end mirror.
+
+### M7 — entity sync (shipped as v0.4.0, partially verified — Veggies/Potato visible)
+
+### M8 — HP capture (shipped as v0.5.0, verified host-side via mock client `hp=N/M`)
+Client-side HP application unverified — needs real host streaming.
+
+### M8 + M9 — client damage suppression (shipped as v0.5.0, **VERIFIED** in-game)
+F10-without-host trick: press F10, take damage in local 2P. Projectile collides, despawns, HP unchanged. M9's Harmony prefix on `PlayerDamageReceiver.TakeDamage` is live and effective.
+
+### Pause sync (shipped as v0.6.0, unverified)
+Host sample → snapshot → client `PauseManager.Pause/Unpause` apply. Local pause input on client is suppressed via Harmony prefix gated on `PauseSync.RemoteDriven`.
