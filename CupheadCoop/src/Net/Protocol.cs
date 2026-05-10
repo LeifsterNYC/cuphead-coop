@@ -25,7 +25,14 @@ namespace CupheadCoop.Net
         //       so player projectiles never spawn locally for binding. With this, client's local
         //       sim produces approximately the same state as host, and NetworkID + transform
         //       streams correct any drift.
-        public const int Version = 10;
+        // v11 = HKMP-style enemy AI suppression + spawn-from-host. EntitySnapshot and
+        //       ProjectileSnapshot gain a uint TypeId (FNV1a32 of Type.FullName) so client can
+        //       Instantiate from a local prefab registry when host streams an entity client
+        //       doesn't have locally (e.g., boss-summoned minion that spawned only on host).
+        //       Combined with disabling AbstractLevelEntity.enabled on client (so AI scripts
+        //       stop running there), client becomes a near-pure renderer for enemies — no more
+        //       two-sims-fighting drift.
+        public const int Version = 11;
     }
 
     internal enum PacketType : byte
@@ -179,13 +186,15 @@ namespace CupheadCoop.Net
     }
 
     /// <summary>
-    /// Per-entity slice (M6): scene actor identified by FNV1a32 of its scene/path. Carries
-    /// transform + animator state. Spawned-at-runtime objects aren't included by the host's
-    /// capture path in v1, so this slice mirrors scene-loaded entities only.
+    /// Per-entity slice (M6): scene actor identified by FNV1a32 of its scene/path.
+    /// v11 also carries a TypeId (FNV1a32 of Type.FullName) so client can Instantiate
+    /// from its local prefab registry when an entity host streams isn't already in
+    /// client's path-hash cache (boss-spawned minions, mid-level summons, etc.).
     /// </summary>
     internal struct EntitySnapshot
     {
         public uint PathHash;
+        public uint TypeId;   // v11: FNV1a32 of Type.FullName
         public float X;
         public float Y;
         public float ScaleX;
@@ -196,6 +205,7 @@ namespace CupheadCoop.Net
         public void Write(NetDataWriter w)
         {
             w.Put(PathHash);
+            w.Put(TypeId);
             w.Put(X);
             w.Put(Y);
             w.Put(ScaleX);
@@ -209,6 +219,7 @@ namespace CupheadCoop.Net
             return new EntitySnapshot
             {
                 PathHash = r.GetUInt(),
+                TypeId = r.GetUInt(),
                 X = r.GetFloat(),
                 Y = r.GetFloat(),
                 ScaleX = r.GetFloat(),
@@ -228,6 +239,7 @@ namespace CupheadCoop.Net
     internal struct ProjectileSnapshot
     {
         public uint NetworkId;
+        public uint TypeId;   // v11: FNV1a32 of Type.FullName for spawn-from-host fallback
         public float X;
         public float Y;
         public float ScaleX;
@@ -238,6 +250,7 @@ namespace CupheadCoop.Net
         public void Write(NetDataWriter w)
         {
             w.Put(NetworkId);
+            w.Put(TypeId);
             w.Put(X);
             w.Put(Y);
             w.Put(ScaleX);
@@ -251,6 +264,7 @@ namespace CupheadCoop.Net
             return new ProjectileSnapshot
             {
                 NetworkId = r.GetUInt(),
+                TypeId = r.GetUInt(),
                 X = r.GetFloat(),
                 Y = r.GetFloat(),
                 ScaleX = r.GetFloat(),

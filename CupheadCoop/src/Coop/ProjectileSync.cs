@@ -51,6 +51,7 @@ namespace CupheadCoop.Coop
         private struct HostEntry
         {
             public uint NetworkId;
+            public uint TypeId; // v11: precomputed FNV1a32(Type.FullName)
             public AbstractProjectile Proj;
         }
         private struct ClientBound
@@ -96,7 +97,8 @@ namespace CupheadCoop.Coop
             int iid = p.GetInstanceID();
             if (_hostTracked.ContainsKey(iid)) return; // already registered — Awake re-fired
             uint id = _nextNetworkId++;
-            _hostTracked[iid] = new HostEntry { NetworkId = id, Proj = p };
+            uint typeId = TypeRegistry.HashType(p.GetType());
+            _hostTracked[iid] = new HostEntry { NetworkId = id, TypeId = typeId, Proj = p };
         }
 
         public static void OnProjectileDestroyHost(AbstractProjectile p)
@@ -134,6 +136,7 @@ namespace CupheadCoop.Coop
                 HostBuffer[count] = new ProjectileSnapshot
                 {
                     NetworkId = e.NetworkId,
+                    TypeId = e.TypeId,
                     X = pos.x,
                     Y = pos.y,
                     ScaleX = scale.x,
@@ -156,6 +159,9 @@ namespace CupheadCoop.Coop
             // NetworkID it corresponds to yet — that decision happens in ApplyToClient when
             // the next snapshot arrives.
             _clientUnbound.Add(p);
+            // Also register this type as a prefab template for spawn-from-host fallback.
+            // Idempotent — TypeRegistry only keeps the first GameObject seen per type.
+            TypeRegistry.RegisterClientTemplate(p.GetType(), p.gameObject);
         }
 
         public static void OnProjectileDestroyClient(AbstractProjectile p)
@@ -236,9 +242,50 @@ namespace CupheadCoop.Coop
                     _clientInstToId[claimed.GetInstanceID()] = s.NetworkId;
                     ApplyTransform(claimed, s);
                     binds++;
+                    continue;
                 }
-                // No match found — host has a projectile we don't have locally. Skip; we'll
-                // either pick it up next tick if a local spawns, or never (acceptable).
+
+                // v11: no local unbound candidate — try to instantiate from prefab template.
+                // Most common case: host's boss fired a projectile that client's local boss
+                // didn't fire (because client's enemy AI is suppressed in v0.9.0). Look up
+                // by TypeId, clone, place at host's transform, bind to NetworkID.
+                if (s.TypeId != 0 && ModConfig.EnableSpawnFromHost.Value)
+                {
+                    var template = TypeRegistry.GetClientTemplate(s.TypeId);
+                    if (template != null)
+                    {
+                        try
+                        {
+                            var newGo = Object.Instantiate(template);
+                            var newProj = newGo.GetComponent<AbstractProjectile>();
+                            if (newProj != null)
+                            {
+                                // Note: AbstractProjectile.Awake on the clone will fire
+                                // OnProjectileAwakeClient, which adds it to _clientUnbound.
+                                // We immediately remove it from there since we're binding it
+                                // right now to host's NetworkID.
+                                for (int j = _clientUnbound.Count - 1; j >= 0; j--)
+                                    if (_clientUnbound[j] == newProj) { _clientUnbound.RemoveAt(j); break; }
+                                _clientBound[s.NetworkId] = new ClientBound { Proj = newProj, LastSeenTime = _now };
+                                _clientInstToId[newProj.GetInstanceID()] = s.NetworkId;
+                                ApplyTransform(newProj, s);
+                                binds++;
+                                continue;
+                            }
+                            else
+                            {
+                                Object.Destroy(newGo);
+                            }
+                        }
+                        catch (System.Exception ex)
+                        {
+                            Log?.LogWarning("ProjectileSync: spawn-from-host Instantiate failed for typeId="
+                                             + s.TypeId.ToString("X") + ": " + ex.Message);
+                        }
+                    }
+                }
+                // No match and no template — host has a projectile we can't reproduce locally.
+                // Skip; better luck next time.
             }
 
             // Reap NetworkIDs we previously bound but haven't seen in this snapshot for
