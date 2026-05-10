@@ -293,9 +293,13 @@ namespace CupheadCoop.Coop
                 if (animHash != 0 && targetAnim != null && targetAnim.isActiveAndEnabled
                     && targetAnim.runtimeAnimatorController != null)
                 {
-                    // Register this animator with the parameter-block patches so the local
-                    // sim can't fight our forced state via SetFloat/SetTrigger/etc.
-                    AnimatorParamPatches.RegisterSuppressed(targetAnim);
+                    // Register ALL animators in this player's hierarchy with the parameter-block
+                    // patches. Cuphead's player has multiple animators (body, weapon, fx) that
+                    // share parameters; if only the body's params are locked, the weapon's
+                    // animator can still drift and visually desync. Cheap to do — small set.
+                    var allAnims = t.GetComponentsInChildren<Animator>();
+                    for (int i = 0; i < allAnims.Length; i++)
+                        AnimatorParamPatches.RegisterSuppressed(allAnims[i]);
 
                     var current = targetAnim.GetCurrentAnimatorStateInfo(0);
                     if (current.fullPathHash != animHash)
