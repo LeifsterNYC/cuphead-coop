@@ -78,6 +78,9 @@ namespace CupheadCoop.Coop
         // M7 v8: full alive-hash list from host (separate from position-tracked entities).
         public static readonly uint[] RemoteAliveHashes = new uint[EntitySync.MaxAliveHashes];
         public static int RemoteAliveHashCount;
+        // M7 v9: per-projectile snapshots with NetworkIDs. Pre-allocated buffer.
+        public static readonly ProjectileSnapshot[] RemoteProjectiles = new ProjectileSnapshot[ProjectileSync.MaxSyncedProjectiles];
+        public static int RemoteProjectileCount;
 
         // True only while Plugin.CaptureLocalInputForUpload is reading Rewired. The input gate
         // patches let the call through unchanged when this is set, but otherwise return zero
@@ -171,6 +174,8 @@ namespace CupheadCoop.Coop
             RemoteEntityCount = 0;
             RemoteIsPaused = false;
             RemoteSceneName = "";
+            RemoteProjectileCount = 0;
+            ProjectileSync.Reset();
         }
 
         /// <summary>
@@ -216,6 +221,15 @@ namespace CupheadCoop.Coop
             if (n > RemoteAliveHashes.Length) n = RemoteAliveHashes.Length;
             for (int i = 0; i < n; i++) RemoteAliveHashes[i] = hashes[i];
             RemoteAliveHashCount = n;
+        }
+
+        public static void ApplyRemoteProjectiles(ProjectileSnapshot[] projectiles, int count)
+        {
+            int n = count;
+            if (projectiles == null) n = 0;
+            if (n > RemoteProjectiles.Length) n = RemoteProjectiles.Length;
+            for (int i = 0; i < n; i++) RemoteProjectiles[i] = projectiles[i];
+            RemoteProjectileCount = n;
         }
 
         private static float Clamp(float v, float min, float max)

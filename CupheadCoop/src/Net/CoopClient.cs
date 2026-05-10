@@ -200,10 +200,11 @@ namespace CupheadCoop.Net
                     var s = StateSnapshot.Read(reader);
                     CoopState.ApplyRemoteState(s.Sequence, s.P1, s.P2, s.IsPaused, s.SceneName, s.Entities, s.EntityCount);
                     CoopState.ApplyRemoteAliveHashes(s.AliveHashes, s.AliveHashCount);
+                    CoopState.ApplyRemoteProjectiles(s.Projectiles, s.ProjectileCount);
                     if (ModConfig.Verbose.Value)
                         _log.LogDebug("rx state seq=" + s.Sequence + " p1=" + (s.P1.Present ? s.P1.X.ToString("F2") + "," + s.P1.Y.ToString("F2") : "-") +
                                       " p2=" + (s.P2.Present ? s.P2.X.ToString("F2") + "," + s.P2.Y.ToString("F2") : "-") +
-                                      " entities=" + s.EntityCount + " hp=" + s.P1.Hp + "/" + s.P2.Hp);
+                                      " entities=" + s.EntityCount + " proj=" + s.ProjectileCount + " hp=" + s.P1.Hp + "/" + s.P2.Hp);
                     break;
                 }
                 default:
