@@ -108,5 +108,38 @@ F10-without-host trick: press F10, take damage in local 2P. Projectile collides,
 - [x] v1.0.0 dist bundles built (win zip / mac tar.gz), CLIENT-INSTRUCTIONS updated for Steam flow
 - [ ] Real two-PC Steam test (Windows host + Mac client, real Steam both sides) — needs Leif + second player; Mac must update to v1.0.0 and set HostSteamId
 
+### v1.1.0 — first real two-PC session fallout (shipped, awaiting two-PC re-test)
+First Windows↔Mac Steam session (2026-07-04): connection clean, gameplay sync "terrible —
+animations not synced, deaths, etc." Root causes found by code audit; none architectural.
+
+- [x] Snapshot interpolation (`SnapshotInterpolation.cs`): buffer last 4 StateSnapshots keyed
+      by HostTickMs (already on the wire), render ~60ms behind newest, lerp positions + anim
+      times for players/entities/projectiles each frame into CoopState before the appliers run.
+      Fixes the 30 Hz hard-snap stepping.
+- [x] Single position writer: PlayerMotorBypass stops writing transform.position (keeps the
+      FixedUpdate skip + Traverse property forcing); ScenePuppetry.ClientApply (LateUpdate,
+      +32000) is the only writer, now fed interpolated values.
+- [x] Animator scrubbing instead of drift-resync: every frame `Play(hash, 0, interpolatedTime)`.
+      Kills two bugs: wrap-around drift (|cur-rx| compared with no loop wrap → rewind stutter
+      every loop) and one-shot replay (capture wrapped `t - floor(t)` so finished non-looping
+      states re-trigger from the fraction — death poses/attack windups replayed forever).
+      Capture now sends `loop ? frac(t) : clamp01(t)` (shared AnimUtil helper, all 3 sites).
+- [x] EntitySync: drop the projectile ("p") layer — ProjectileSync owns runtime clones via
+      NetworkID. Fixes alive-set SetActive(false) killing client's own live shots + hash-bind
+      collisions. Alive-set now only ever touches stable scene entities.
+- [x] M8.5 minimal death mirroring (`PlayerDeathSync.cs`, client): hide a player's
+      SpriteRenderers when host reports IsDead or Present=false (>0.3s hysteresis, other
+      player still present); unhide on revive/respawn. Ghost/parry-revive visuals stay
+      host-only for now.
+- [x] Diagnostics for the next remote test: client logs a 10s-interval sync summary at Info
+      (rx Hz, snapshot age, entity hit/miss, projectile bound/unbound) so Verbose isn't needed.
+- [x] Protocol Version 12 (wire format unchanged; version gate so both sides run v1.1.0).
+- [x] Build, deploy both installs, solo Goldberg smoke test (UDP headless: handshake v12,
+      rx=30.0Hz steady, 0 exceptions both sides), bundles, release.
+- [x] BONUS bug found by the new diagnostics: host snapshot accumulator reset to 0 instead of
+      subtracting the interval — every session to date actually streamed at ~20 Hz, not 30
+      (at 60 fps, 33ms threshold fires every 3rd frame). Fixed with subtract + burst cap.
+- [ ] Real two-PC re-test (Windows host + Mac client, both on v1.1.0)
+
 ### Pause sync (shipped as v0.6.0, unverified)
 Host sample → snapshot → client `PauseManager.Pause/Unpause` apply. Local pause input on client is suppressed via Harmony prefix gated on `PauseSync.RemoteDriven`.

@@ -176,8 +176,7 @@ namespace CupheadCoop.Coop
                         {
                             var st = animator.GetCurrentAnimatorStateInfo(0);
                             animHash = st.fullPathHash;
-                            float t = st.normalizedTime;
-                            animTime = t - Mathf.Floor(t);
+                            animTime = AnimUtil.SampleTime(st);
                         }
 
                         if (ctrl.stats != null)
@@ -206,8 +205,7 @@ namespace CupheadCoop.Coop
                     {
                         var st = animator.GetCurrentAnimatorStateInfo(0);
                         animHash = st.fullPathHash;
-                        float t = st.normalizedTime;
-                        animTime = t - Mathf.Floor(t);
+                        animTime = AnimUtil.SampleTime(st);
                     }
                     return new Vector2(pos.x, pos.y);
                 }
@@ -380,15 +378,7 @@ namespace CupheadCoop.Coop
                     for (int i = 0; i < allAnims.Length; i++)
                         AnimatorParamPatches.RegisterSuppressed(allAnims[i]);
 
-                    var current = targetAnim.GetCurrentAnimatorStateInfo(0);
-                    if (current.fullPathHash != animHash)
-                    {
-                        targetAnim.Play(animHash, 0, animTime);
-                    }
-                    else if (Mathf.Abs((current.normalizedTime - Mathf.Floor(current.normalizedTime)) - animTime) > 0.15f)
-                    {
-                        targetAnim.Play(animHash, 0, animTime);
-                    }
+                    AnimUtil.Scrub(targetAnim, animHash, animTime);
                 }
 
                 // Push HP through the property setter so its OnHealthChanged event fires and the

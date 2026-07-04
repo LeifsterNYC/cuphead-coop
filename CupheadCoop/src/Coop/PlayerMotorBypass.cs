@@ -1,5 +1,4 @@
 using HarmonyLib;
-using UnityEngine;
 
 namespace CupheadCoop.Coop
 {
@@ -15,7 +14,10 @@ namespace CupheadCoop.Coop
     ///
     /// Solution: on client, skip the motor's FixedUpdate body entirely for both P1 and P2.
     /// Drive their visible state purely from host's stream:
-    ///   - transform.position lerped toward the host-streamed (X, Y)
+    ///   - transform.position is written SOLELY by ScenePuppetry.ClientApply, which runs in the
+    ///     +32000 LateUpdate off the interpolated snapshot stream. This bypass no longer touches
+    ///     position at all (a second FixedUpdate-rate lerp here fought the interpolated LateUpdate
+    ///     write and produced jitter).
     ///   - LookDirection / TrueLookDirection / MoveDirection / Grounded forced via Traverse
     ///     (HarmonyLib's reflection helper) so animators and other systems read coherent state
     ///   - Animator state (which is also part of the streamed PlayerSnapshot) gets played by
@@ -31,11 +33,6 @@ namespace CupheadCoop.Coop
     [HarmonyPatch]
     internal static class PlayerMotorBypass
     {
-        // Quantized lerp factor — closer to 1 = snap, lower = smoother. 20 is from Germanized's
-        // observed value: at 60Hz FixedUpdate, dt=0.0166, 20*dt ≈ 0.33 — a third of the way
-        // toward target each tick. Visually smooth, catches up in ~3 ticks.
-        private const float PositionLerpRate = 20f;
-
         // ---- LevelPlayerMotor (used in boss + run-and-gun gameplay scenes) ----
 
         [HarmonyPatch(typeof(LevelPlayerMotor), "FixedUpdate")]
@@ -56,26 +53,21 @@ namespace CupheadCoop.Coop
             try
             {
                 bool present;
-                float x, y;
                 sbyte facing;
                 if (id == global::PlayerId.PlayerOne)
                 {
                     present = CoopState.RemoteP1Present;
-                    x = CoopState.RemoteP1X; y = CoopState.RemoteP1Y;
                     facing = CoopState.RemoteP1Facing;
                 }
                 else
                 {
                     present = CoopState.RemoteP2Present;
-                    x = CoopState.RemoteP2X; y = CoopState.RemoteP2Y;
                     facing = CoopState.RemoteP2Facing;
                 }
                 if (!present) return;
 
-                var t = motor.transform;
-                var target = new Vector3(x, y, t.position.z);
-                t.position = Vector3.Lerp(t.position, target,
-                    Mathf.Min(1f, PositionLerpRate * Time.fixedDeltaTime));
+                // Position is written by ScenePuppetry.ClientApply (interpolated, +32000 LateUpdate)
+                // — deliberately not touched here.
 
                 // Force motor's private-set properties via Traverse so animators / weapon managers
                 // / aim logic see coherent direction state. Without this, the motor's internal
@@ -120,26 +112,21 @@ namespace CupheadCoop.Coop
             try
             {
                 bool present;
-                float x, y;
                 sbyte facing;
                 if (id == global::PlayerId.PlayerOne)
                 {
                     present = CoopState.RemoteP1Present;
-                    x = CoopState.RemoteP1X; y = CoopState.RemoteP1Y;
                     facing = CoopState.RemoteP1Facing;
                 }
                 else
                 {
                     present = CoopState.RemoteP2Present;
-                    x = CoopState.RemoteP2X; y = CoopState.RemoteP2Y;
                     facing = CoopState.RemoteP2Facing;
                 }
                 if (!present) return;
 
-                var t = motor.transform;
-                var target = new Vector3(x, y, t.position.z);
-                t.position = Vector3.Lerp(t.position, target,
-                    Mathf.Min(1f, PositionLerpRate * Time.fixedDeltaTime));
+                // Position is written by ScenePuppetry.ClientApply (interpolated, +32000 LateUpdate)
+                // — deliberately not touched here.
 
                 int lookX = facing;
                 var trav = Traverse.Create(motor);

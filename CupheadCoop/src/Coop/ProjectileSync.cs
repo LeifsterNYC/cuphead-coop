@@ -127,8 +127,7 @@ namespace CupheadCoop.Coop
                 {
                     var st = animator.GetCurrentAnimatorStateInfo(0);
                     animHash = st.fullPathHash;
-                    float t = st.normalizedTime;
-                    animTime = t - Mathf.Floor(t);
+                    animTime = AnimUtil.SampleTime(st);
                 }
 
                 var pos = e.Proj.transform.position;
@@ -344,13 +343,7 @@ namespace CupheadCoop.Coop
                     if (animator != null && animator.isActiveAndEnabled
                         && animator.runtimeAnimatorController != null)
                     {
-                        var current = animator.GetCurrentAnimatorStateInfo(0);
-                        float curT = current.normalizedTime - Mathf.Floor(current.normalizedTime);
-                        if (current.fullPathHash != s.AnimStateHash
-                            || Mathf.Abs(curT - s.AnimNormalizedTime) > 0.15f)
-                        {
-                            animator.Play(s.AnimStateHash, 0, s.AnimNormalizedTime);
-                        }
+                        AnimUtil.Scrub(animator, s.AnimStateHash, s.AnimNormalizedTime);
                     }
                 }
             }

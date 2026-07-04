@@ -20,6 +20,7 @@ namespace CupheadCoop
         public static ConfigEntry<int> InputSendRateHz;
         public static ConfigEntry<int> InputBufferFrames;
         public static ConfigEntry<int> StateSendRateHz;
+        public static ConfigEntry<int> InterpDelayMs;
 
         public static ConfigEntry<bool> DebugForceP2WalkRight;
         public static ConfigEntry<bool> Verbose;
@@ -39,6 +40,7 @@ namespace CupheadCoop
         public static ConfigEntry<bool> EnableClientEntityAISuppress;
         public static ConfigEntry<bool> EnableSpawnFromHost;
         public static ConfigEntry<bool> EnableRemoteMotorBypass;
+        public static ConfigEntry<bool> EnableDeathSync;
 
         public static void Bind(ConfigFile cfg)
         {
@@ -75,6 +77,8 @@ namespace CupheadCoop
                 "Frames of jitter buffer on the host before applying network input. 1 = lowest latency, 3+ = smoother under jitter.");
             StateSendRateHz = cfg.Bind("State", "SendRateHz", 30,
                 "How often the host sends a world-state snapshot (P1/P2 transforms) to the client. 30 Hz is a good balance for LAN; bump to 60 if jitter is visible.");
+            InterpDelayMs = cfg.Bind("State", "InterpDelayMs", 60,
+                "How far behind the newest host snapshot the client renders, in ms. Higher = smoother under jitter, lower = less visual latency. 2 snapshot intervals is a good floor.");
 
             DebugForceP2WalkRight = cfg.Bind("Debug", "ForceP2WalkRight", false,
                 "If true, with no active session, forces Player 2's MoveHorizontal axis to +1.0. Used to verify the input intercept works without networking.");
@@ -106,7 +110,9 @@ namespace CupheadCoop
             EnableSpawnFromHost = cfg.Bind("Sync", "EnableSpawnFromHost", true,
                 "v0.9.0 spawn-from-host: when host streams an entity or projectile that client doesn't have locally (boss-summoned minion, host-fired projectile that client's suppressed AI didn't fire), Object.Instantiate from a local prefab template (built at scene-load by walking FindObjectsOfType + hashing Type.FullName). Required for full visual sync once enemy AI is suppressed. Disable if Instantiate'd clones cause Unity errors / NREs in your version of Cuphead.");
             EnableRemoteMotorBypass = cfg.Bind("Sync", "EnableRemoteMotorBypass", true,
-                "v0.9.1 architectural pivot inspired by Germanized/CupHeads' PlayerMotorPatch: on client, prefix-skip LevelPlayerMotor.FixedUpdate and ArcadePlayerMotor.FixedUpdate for both player slots. Drive their visible state purely from host's transform stream (lerp position) + Traverse-set motor properties (LookDirection, MoveDirection, Grounded). Eliminates the parallel-sim divergence that input-mirroring couldn't fully fix. Disable if both cups go visually static or jitter weirdly.");
+                "v0.9.1 architectural pivot inspired by Germanized/CupHeads' PlayerMotorPatch: on client, prefix-skip LevelPlayerMotor.FixedUpdate and ArcadePlayerMotor.FixedUpdate for both player slots. Their position is written by ScenePuppetry from the interpolated host stream + Traverse-set motor properties (LookDirection, MoveDirection, Grounded). Eliminates the parallel-sim divergence that input-mirroring couldn't fully fix. Disable if both cups go visually static or jitter weirdly.");
+            EnableDeathSync = cfg.Bind("Sync", "EnableDeathSync", true,
+                "v1.1.0 M8.5 minimal death mirroring: on client, hide a cup's sprite renderers while the host reports that player dead (or absent while the other player is still present). Prevents a frozen, alive-looking cup being left standing when a player dies on the host. Ghost/parry-revive visuals are not mirrored yet. Disable if players go invisible when they shouldn't.");
         }
     }
 }

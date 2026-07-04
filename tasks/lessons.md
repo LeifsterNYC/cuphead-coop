@@ -45,3 +45,12 @@ Leif asked to remove all Claude attributions. Rewrote full history with
 force-pushed main + tags, scrubbed the v1.0.0 release notes.
 **Rule: never add Co-Authored-By trailers or "Generated with Claude Code"
 lines to commits, release notes, or PR bodies in this repo.**
+
+## Fixed-rate accumulator: subtract, never reset (2026-07-04, v1.1.0)
+CoopHost's snapshot tick did `_stateAccum = 0f` after firing. At 60 fps with a 33.3ms
+interval, the overshoot thrown away each reset quantized "30 Hz" down to an effective
+20 Hz (fires every 3rd frame) — every session to date streamed a third fewer snapshots
+than configured, and nobody noticed until the v1.1.0 10s sync-health log printed rx=20.3Hz.
+**Rule: fixed-rate tickers must `accum -= interval` (with a one-interval cap against
+post-hitch bursts). And rate-instrument everything — the bug was invisible until a
+diagnostic printed the actual rate.**

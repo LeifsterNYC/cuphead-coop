@@ -32,7 +32,14 @@ namespace CupheadCoop.Net
         //       Combined with disabling AbstractLevelEntity.enabled on client (so AI scripts
         //       stop running there), client becomes a near-pure renderer for enemies — no more
         //       two-sims-fighting drift.
-        public const int Version = 11;
+        // v12 = v1.1.0 client-side behavioral changes. No wire-format change, but the compatibility
+        //       gate bumps because host and client MUST agree: (a) client now buffers snapshots and
+        //       renders an interpolated point in the past (HostTickMs-driven) instead of the raw
+        //       latest; (b) animator state is scrubbed to the host timeline every frame rather than
+        //       drift-resynced; (c) EntitySync no longer hashes projectiles (ProjectileSync owns
+        //       them), so a v11 host paired with a v12 client would double-track projectiles;
+        //       (d) minimal client-side death mirroring hides dead/absent cups' sprites.
+        public const int Version = 12;
     }
 
     internal enum PacketType : byte

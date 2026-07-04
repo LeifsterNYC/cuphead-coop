@@ -1,0 +1,46 @@
+[Message:   BepInEx] BepInEx 5.4.23.5 - Cuphead (9/24/2024 7:14:29 PM)
+[Info   :   BepInEx] Running under Unity v2017.4.9.7177439
+[Info   :   BepInEx] CLR runtime version: 2.0.50727.1433
+[Info   :   BepInEx] Supports SRE: True
+[Info   :   BepInEx] System platform: Bits64, Windows
+[Message:   BepInEx] Preloader started
+[Info   :   BepInEx] Loaded 1 patcher method from [BepInEx.Preloader 5.4.23.5]
+[Info   :   BepInEx] 1 patcher plugin loaded
+[Info   :   BepInEx] Patching [UnityEngine.CoreModule] with [BepInEx.Chainloader]
+[Message:   BepInEx] Preloader finished
+[Warning:  HarmonyX] AccessTools.Property: Could not find property for type UnityEngine.Application and name isBatchMode
+[Message:   BepInEx] Chainloader ready
+[Message:   BepInEx] Chainloader started
+[Info   :   BepInEx] 1 plugin to load
+[Info   :   BepInEx] Loading [Cuphead Co-op 1.0.0]
+[Info   :Cuphead Co-op] CupheadCoop 1.0.0 loading…
+[Info   :Cuphead Co-op] EntitySync: cached 0 entities (0 skipped) for scene 'scene_start'
+[Info   :Cuphead Co-op] Harmony patches applied: 31
+[Info   :Cuphead Co-op] Transport=Steam. Press F9 to host, F10 to connect (Steam id <unset>), F11 to disconnect.
+[Message:   BepInEx] Chainloader startup complete
+[Info   :   Console] Rewired: Searching for compatible XInput library...
+[Info   :   Console] Rewired: Found Xinput1_4.dll.
+[Info   :Cuphead Co-op] EntitySync: cached 0 entities (0 skipped) for scene 'scene_title'
+[Info   :Cuphead Co-op] Hotkey: Host (F9) pressed
+[Info   :Cuphead Co-op] CoopHost: Steam P2P listening. Your SteamID64 = 76561198143430585 — the second player puts this in [Network] HostSteamId and presses Connect.
+[Info   :Cuphead Co-op] EntitySync: cached 0 entities (0 skipped) for scene 'scene_load_helper'
+[Info   :Cuphead Co-op] EntitySync: cached 0 entities (0 skipped) for scene 'scene_slot_select'
+[Info   :Cuphead Co-op] ScenePuppetry capture: P1: DoesPlayerExist=false (no MapPlayerController either), P2: DoesPlayerExist=false (no MapPlayerController either)
+[Info   :Cuphead Co-op] CoopHost: P2P session request from 76561198847425568 — accepting
+[Info   :Cuphead Co-op] CoopHost: client connected via Steam (id 76561198847425568)
+[Info   :Cuphead Co-op] P2AutoJoin: OnPlayerJoinedEvent has no subscribers
+[Info   :Cuphead Co-op] P2AutoJoin: forced P2 to Joined state and fired OnPlayerJoinedEvent
+[Info   :Cuphead Co-op] EntitySync: cached 0 entities (0 skipped) for scene 'scene_load_helper'
+[Info   :Cuphead Co-op] PlayerInput.Init: P1 -> Rewired id 0
+[Info   :Cuphead Co-op] PlayerInput.Init: P2 -> Rewired id 1
+[Info   :Cuphead Co-op] EntitySync: cached 0 entities (0 skipped) for scene 'scene_map_world_1'
+[Info   :   Console] Rewired: [WARNING] No Action exists for Action Id 9. You can create Actions in the editor.
+[Info   :   Console] Rewired: [WARNING] No Action exists for Action Id 10. You can create Actions in the editor.
+[Info   :   Console] Rewired: [WARNING] No Action exists for Action Id 17. You can create Actions in the editor.
+[Info   :   Console] Rewired: [WARNING] No Action exists for Action Id 27. You can create Actions in the editor.
+[Info   :Cuphead Co-op] ScenePuppetry capture: both players sampled @ P1=(0.0,2.5) P2=(0.8,2.2)
+[Info   :Cuphead Co-op] EntitySync: cached 0 entities (0 skipped) for scene 'scene_load_helper'
+[Info   :Cuphead Co-op] EntitySync: cached 6 entities (0 skipped) for scene 'scene_level_slime'
+[Info   :Cuphead Co-op] EntitySync: tracking Tombstone, BigSlime, Slime, Spiker (1), Spiker, Spiker (2)
+[Info   :Cuphead Co-op] ScenePuppetry capture: P1: ok, P2: DoesPlayerExist=false (no MapPlayerController either)
+[Info   :Cuphead Co-op] ScenePuppetry capture: P1: DoesPlayerExist=false (no MapPlayerController either), P2: DoesPlayerExist=false (no MapPlayerController either)

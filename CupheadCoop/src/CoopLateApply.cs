@@ -34,11 +34,16 @@ namespace CupheadCoop
             }
             else if (CoopState.Mode == CoopMode.Client)
             {
+                // v1.1.0: interpolate the buffered snapshot stream into CoopState BEFORE any
+                // applier reads it, so every downstream applier sees the smoothed view.
+                SnapshotInterpolation.Apply();
+
                 if (ModConfig.EnableSceneSync.Value)
                     SceneSync.ApplyFromHost(CoopState.RemoteSceneName);
 
                 EntitySync.Tick(dt);
                 ScenePuppetry.ClientApply();
+                PlayerDeathSync.Tick();
 
                 if (ModConfig.EnableEntitySync.Value)
                 {

@@ -66,7 +66,11 @@ namespace CupheadCoop.Net
 
             _stateAccum += dt;
             if (_stateAccum < interval) return;
-            _stateAccum = 0f;
+            // Subtract instead of resetting to zero — the reset discarded the overshoot,
+            // which at 60 fps quantized "30 Hz" down to an effective 20 Hz (every 3rd frame).
+            // Cap the carried remainder at one interval so a long hitch can't cause a burst.
+            _stateAccum -= interval;
+            if (_stateAccum > interval) _stateAccum = interval;
 
             _stateSeq++;
             int entityCount;

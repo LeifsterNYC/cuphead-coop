@@ -163,6 +163,9 @@ namespace CupheadCoop.Net
                     CoopState.ApplyRemoteState(s.Sequence, s.P1, s.P2, s.IsPaused, s.SceneName, s.Entities, s.EntityCount);
                     CoopState.ApplyRemoteAliveHashes(s.AliveHashes, s.AliveHashCount);
                     CoopState.ApplyRemoteProjectiles(s.Projectiles, s.ProjectileCount);
+                    // v1.1.0: buffer this snapshot for client-side interpolation. The arrays inside
+                    // it are freshly allocated by StateSnapshot.Read, so retaining them is safe.
+                    SnapshotInterpolation.Push(ref s);
                     if (ModConfig.Verbose.Value)
                         _log.LogDebug("rx state seq=" + s.Sequence + " p1=" + (s.P1.Present ? s.P1.X.ToString("F2") + "," + s.P1.Y.ToString("F2") : "-") +
                                       " p2=" + (s.P2.Present ? s.P2.X.ToString("F2") + "," + s.P2.Y.ToString("F2") : "-") +

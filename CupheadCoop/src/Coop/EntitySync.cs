@@ -72,10 +72,10 @@ namespace CupheadCoop.Coop
         public static int LastDeactivated;
         public static int LastSpawnedFromHost; // v11: how many of the hits this tick came via Instantiate-from-template
 
-        // Periodic re-walk cadence. Tightened from 2s to 0.5s now that we also track
-        // AbstractProjectile — projectiles are short-lived (sub-second), so a 2s interval
-        // would miss most of them. Cost: ~30ms × 2/s = ~6% of one frame budget. Acceptable.
-        private const float RefreshIntervalSec = 0.5f;
+        // Periodic re-walk cadence. Back to 2s now that projectiles are owned entirely by
+        // ProjectileSync — this refresh only needs to catch late-spawned scene entities
+        // (boss phase 2, shopkeepers, cutscene cleanup), which are not sub-second-lived.
+        private const float RefreshIntervalSec = 2f;
         private static float _secondsSinceRefresh;
 
         public static void Wire()
@@ -117,18 +117,13 @@ namespace CupheadCoop.Coop
             {
                 int kept = 0, skipped = 0;
 
-                // Layer 1: scene-loaded gameplay entities. Catches bosses, scenery animations,
+                // Scene-loaded gameplay entities. Catches bosses, scenery animations,
                 // mini-bosses, set pieces. Path-hash works because these are stable scene objects.
+                // Projectiles are NOT walked here — they're handled entirely by ProjectileSync
+                // (host-assigned NetworkIDs), which survives divergent client spawn order that
+                // path-hashing can't.
                 var entities = Object.FindObjectsOfType<AbstractLevelEntity>();
                 foreach (var ent in entities) { if (TryAdd(ent?.gameObject, ref kept, ref skipped, "le")) {} }
-
-                // Layer 2: projectiles (boss attacks, player shots, mob shots). Runtime-spawned
-                // clones — path-hash uses sibling index instead of name to disambiguate, so the
-                // first projectile fired by a given parent on host hashes to the same value as
-                // the first projectile fired by the same parent on client (assuming spawn order
-                // is deterministic, which it is when boss AI animation states match).
-                var projectiles = Object.FindObjectsOfType<AbstractProjectile>();
-                foreach (var p in projectiles) { if (TryAdd(p?.gameObject, ref kept, ref skipped, "p")) {} }
 
                 string scene = SceneManager.GetActiveScene().name;
                 // Only log when the count or scene changed — periodic refresh in a stable scene
@@ -195,8 +190,7 @@ namespace CupheadCoop.Coop
                 {
                     var st = er.Animator.GetCurrentAnimatorStateInfo(0);
                     animHash = st.fullPathHash;
-                    float t = st.normalizedTime;
-                    animTime = t - Mathf.Floor(t);
+                    animTime = AnimUtil.SampleTime(st);
                 }
 
                 var pos = er.Transform.position;
@@ -326,13 +320,7 @@ namespace CupheadCoop.Coop
                     if (s.AnimStateHash != 0 && er.Animator != null && er.Animator.isActiveAndEnabled
                         && er.Animator.runtimeAnimatorController != null)
                     {
-                        var current = er.Animator.GetCurrentAnimatorStateInfo(0);
-                        float curT = current.normalizedTime - Mathf.Floor(current.normalizedTime);
-                        if (current.fullPathHash != s.AnimStateHash
-                            || Mathf.Abs(curT - s.AnimNormalizedTime) > 0.15f)
-                        {
-                            er.Animator.Play(s.AnimStateHash, 0, s.AnimNormalizedTime);
-                        }
+                        AnimUtil.Scrub(er.Animator, s.AnimStateHash, s.AnimNormalizedTime);
                     }
                 }
                 catch
@@ -400,9 +388,9 @@ namespace CupheadCoop.Coop
             uint hash = Fnv1a32(path);
 
             uint typeId = 0;
-            // Get the most-derived component on this GameObject for type registry. For "le"
-            // layer we use AbstractLevelEntity (or its concrete subclass); for "p" layer
-            // (projectile) we use AbstractProjectile.
+            // Get the most-derived component on this GameObject for the type registry. Only the
+            // "le" layer exists now (AbstractLevelEntity / its concrete subclass); projectiles
+            // are handled by ProjectileSync, not here.
             if (layerTag == "le")
             {
                 var ai = go.GetComponent<AbstractLevelEntity>();
@@ -416,13 +404,6 @@ namespace CupheadCoop.Coop
                         _clientDisabled[ai.GetInstanceID()] = ai;
                     }
                 }
-            }
-            else if (layerTag == "p")
-            {
-                var pp = go.GetComponent<AbstractProjectile>();
-                if (pp != null) typeId = TypeRegistry.HashType(pp.GetType());
-                if (CoopState.Mode == CoopMode.Client && pp != null)
-                    TypeRegistry.RegisterClientTemplate(pp.GetType(), go);
             }
 
             _byPath[hash] = new EntityRef { Transform = go.transform, Animator = animator, Path = path, TypeId = typeId };
