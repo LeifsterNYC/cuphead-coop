@@ -149,5 +149,19 @@ animations not synced, deaths, etc." Root causes found by code audit; none archi
       impossible from automation; visual runs need the user to start run-visual-test.ps1.
 - [ ] Real two-PC re-test (Windows host + Mac client, both on v1.1.0)
 
+### v1.2.0 — full-fidelity client rendering (in progress; "implement EVERYTHING, then test")
+User verdict on v1.1.0: client cups slide without walk-left/shoot/damage animations, both-dead
+shows nothing, lives HUD missing. Directive: batch ALL known gaps, verify autonomously, then one
+human test.
+
+- [ ] Investigate (3 parallel decompile agents): player-anim pipeline, death/game-over/HUD flow, audio cues
+- [ ] Player animations: full fidelity on client (walk both dirs, aim/shoot, hit react) — architecture per investigation
+- [ ] Game-over + win mirroring (both dead -> retry card on client; KNOCKOUT/results on win)
+- [ ] Lives/HP HUD on client
+- [ ] Ghost/parry-revive visuals on client
+- [ ] Audio cues on client (scope per investigation)
+- [ ] Harness-verified: anim-state parity assertions, game-over log check, HUD presence check
+- [ ] v1.2.0 bundles + release, then the ONE human test
+
 ### Pause sync (shipped as v0.6.0, unverified)
 Host sample → snapshot → client `PauseManager.Pause/Unpause` apply. Local pause input on client is suppressed via Harmony prefix gated on `PauseSync.RemoteDriven`.
