@@ -40,8 +40,13 @@
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net35" Version="1.0.3">
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <!-- 0.9.5.2 is the last version with a net35 target framework. Don't bump unless we move
-         the plugin to net46 / netstandard2.0 (Cuphead's older Mono runtime may not load those). -->
+    <!-- v1.0.0: default transport is Steam P2P via Cuphead's already-bundled Steamworks.NET
+         (lives in Assembly-CSharp-firstpass) — free NAT traversal, no IP/ZeroTier exchange.
+         LiteNetLib stays as the selectable 'Udp' transport because (a) solo two-instance
+         testing on one PC can't use Steam P2P (one account can't dial itself), (b) the
+         MockClient tool speaks it, (c) it's the fallback if Steam relay misbehaves.
+         0.9.5.2 is the last version with a net35 target — don't bump unless we move the
+         plugin off net35 (Cuphead's older Mono runtime may not load newer frameworks). -->
     <PackageReference Include="LiteNetLib" Version="0.9.5.2" />
   </ItemGroup>
 

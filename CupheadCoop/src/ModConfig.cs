@@ -10,9 +10,12 @@ namespace CupheadCoop
         public static ConfigEntry<KeyCode> KeyDisconnect;
         public static ConfigEntry<KeyCode> KeyToggleOverlay;
 
+        public static ConfigEntry<string> Transport;
         public static ConfigEntry<string> RemoteHost;
         public static ConfigEntry<int> Port;
         public static ConfigEntry<string> ConnectKey;
+        public static ConfigEntry<string> HostSteamId;
+        public static ConfigEntry<string> AutoStart;
 
         public static ConfigEntry<int> InputSendRateHz;
         public static ConfigEntry<int> InputBufferFrames;
@@ -48,12 +51,23 @@ namespace CupheadCoop
             KeyToggleOverlay = cfg.Bind("Hotkeys", "ToggleOverlay", KeyCode.O,
                 "Show/hide the in-game CupheadCoop status overlay (default O).");
 
+            Transport = cfg.Bind("Network", "Transport", "Steam",
+                "Wire transport: 'Steam' (Steam P2P — no port forwarding or ZeroTier needed; client sets HostSteamId) " +
+                "or 'Udp' (LiteNetLib direct UDP — for LAN/ZeroTier and solo two-instance testing on one PC, " +
+                "where a single Steam account can't connect to itself). Both ends must use the same transport.");
             RemoteHost = cfg.Bind("Network", "RemoteHost", "127.0.0.1",
-                "IPv4 address of the host. LAN: use the host PC's local IP.");
+                "Udp transport only: IPv4 address of the host. LAN: use the host PC's local IP.");
             Port = cfg.Bind("Network", "Port", 47777,
                 "UDP port used for both hosting and connecting.");
             ConnectKey = cfg.Bind("Network", "ConnectKey", "cuphead-coop-v0",
                 "Shared key both sides must agree on; prevents stray traffic.");
+            HostSteamId = cfg.Bind("Network", "HostSteamId", "",
+                "Steam transport only, client side: the host's SteamID64 (a 17-digit number). " +
+                "The host's ID is shown in their overlay and BepInEx log when they press Host.");
+            AutoStart = cfg.Bind("Network", "AutoStart", "Off",
+                "Automatically take a role a few seconds after the game boots: 'Host', 'Connect', or 'Off'. " +
+                "With 'Connect', the client keeps retrying until the host is up, so launch order doesn't matter. " +
+                "Lets both players just start the game and meet in a level — no hotkeys needed.");
 
             InputSendRateHz = cfg.Bind("Input", "SendRateHz", 60,
                 "How often the client sends its input snapshot to the host.");

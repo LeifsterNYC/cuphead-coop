@@ -1,70 +1,63 @@
-using System;
 using BepInEx.Logging;
 using CupheadCoop.Coop;
-using LiteNetLib;
 using LiteNetLib.Utils;
 
 namespace CupheadCoop.Net
 {
     /// <summary>
-    /// Host-side networking. Listens on the configured port and accepts a single Player 2 client.
-    /// Every received <see cref="PacketType.InputFrame"/> is forwarded into <see cref="CoopState"/>.
+    /// Host-side protocol layer: accepts a single Player 2 client over whichever transport
+    /// (UDP or Steam P2P) it was constructed with, forwards received InputFrames into
+    /// <see cref="CoopState"/>, and streams StateSnapshots back at the configured rate.
     /// </summary>
-    internal class CoopHost : INetEventListener
+    internal class CoopHost
     {
         private readonly ManualLogSource _log;
-        private NetManager _net;
-        private NetPeer _client;
+        private readonly IHostTransport _transport;
 
         // M4 snapshot pacing
         private float _stateAccum;
         private uint _stateSeq;
         private readonly System.Diagnostics.Stopwatch _hostClock = System.Diagnostics.Stopwatch.StartNew();
 
-        public bool Running => _net != null && _net.IsRunning;
-        public bool HasClient => _client != null && _client.ConnectionState == ConnectionState.Connected;
-        public int PingMs { get; private set; }
+        public bool Running => _transport.Running;
+        public bool HasClient => _transport.HasClient;
+        public int PingMs => _transport.PingMs;
+        public string Describe => _transport.Describe;
 
-        public CoopHost(ManualLogSource log) { _log = log; }
-
-        public bool Start(int port, string connectKey)
+        public CoopHost(ManualLogSource log, IHostTransport transport)
         {
-            _net = new NetManager(this);
-            _net.UnconnectedMessagesEnabled = false;
-            _net.UpdateTime = 15;
-            if (!_net.Start(port))
-            {
-                _log.LogError("CoopHost: failed to bind UDP port " + port);
-                _net = null;
-                return false;
-            }
+            _log = log;
+            _transport = transport;
+            _transport.ClientConnected += OnClientConnected;
+            _transport.ClientDisconnected += OnClientDisconnected;
+            _transport.Received += OnReceived;
+        }
+
+        public bool Start()
+        {
+            if (!_transport.Start()) return false;
             CoopState.Mode = CoopMode.Host;
             CoopState.HasRemoteInput = false;
-            _log.LogInfo("CoopHost: listening on UDP " + port + " (key='" + connectKey + "')");
             return true;
         }
 
         public void Stop()
         {
-            if (_net != null) { _net.Stop(); _net = null; }
-            _client = null;
+            _transport.Stop();
             CoopState.Reset();
             _log.LogInfo("CoopHost: stopped");
         }
 
-        public void Pump()
-        {
-            if (_net != null) _net.PollEvents();
-        }
+        public void Pump() => _transport.Pump();
 
         /// <summary>
         /// Called from <c>Plugin.LateUpdate</c> after <c>ScenePuppetry.HostCapture</c> has sampled
-        /// live transforms. Sends an unreliable+sequenced StateSnapshot to the connected peer at
-        /// the configured rate. No-ops if no peer is connected.
+        /// live transforms. Sends a latest-wins StateSnapshot to the connected peer at the
+        /// configured rate. No-ops if no peer is connected.
         /// </summary>
         public void TickStateSnapshot(float dt)
         {
-            if (_client == null || _client.ConnectionState != ConnectionState.Connected) return;
+            if (!_transport.HasClient) return;
 
             int rate = ModConfig.StateSendRateHz.Value;
             if (rate < 5) rate = 5;
@@ -124,35 +117,18 @@ namespace CupheadCoop.Net
 
             var w = new NetDataWriter();
             snap.Write(w);
-            _client.Send(w, DeliveryMethod.Sequenced);
+            _transport.Send(w, NetDelivery.Sequenced);
 
             if (ModConfig.Verbose.Value)
                 _log.LogDebug("tx state seq=" + _stateSeq + " p1=" + (snap.P1.Present ? snap.P1.X.ToString("F2") + "," + snap.P1.Y.ToString("F2") : "-") +
                               " p2=" + (snap.P2.Present ? snap.P2.X.ToString("F2") + "," + snap.P2.Y.ToString("F2") : "-"));
         }
 
-        public void OnConnectionRequest(ConnectionRequest request)
+        private void OnClientConnected()
         {
-            _log.LogInfo("CoopHost: connection request from " + request.RemoteEndPoint);
-            if (_client != null)
-            {
-                _log.LogWarning("CoopHost: rejecting (already have a client at " + _client.EndPoint + ")");
-                request.Reject(Encode("server full"));
-                return;
-            }
-            var peer = request.AcceptIfKey(ModConfig.ConnectKey.Value);
-            if (peer == null)
-                _log.LogWarning("CoopHost: rejected by AcceptIfKey (key mismatch?). Remote=" + request.RemoteEndPoint);
-        }
-
-        public void OnPeerConnected(NetPeer peer)
-        {
-            _client = peer;
-            _log.LogInfo("CoopHost: client connected from " + peer.EndPoint);
-
             var w = new NetDataWriter();
             new WelcomePacket { Version = Protocol.Version, Accepted = true, Reason = "" }.Write(w);
-            peer.Send(w, DeliveryMethod.ReliableOrdered);
+            _transport.Send(w, NetDelivery.Reliable);
 
             // Auto-join P2 on host so the client's input can drive a real cup. Without this,
             // host's P2 doesn't exist (no controller plugged in on host's PC) and our network
@@ -160,30 +136,18 @@ namespace CupheadCoop.Net
             P2AutoJoin.Trigger();
         }
 
-        public void OnPeerDisconnected(NetPeer peer, DisconnectInfo disconnectInfo)
+        private void OnClientDisconnected(string reason)
         {
-            _log.LogInfo("CoopHost: client disconnected (" + disconnectInfo.Reason + ")");
-            if (peer == _client) _client = null;
+            _log.LogInfo("CoopHost: client disconnected (" + reason + ")");
             CoopState.HasRemoteInput = false;
             CoopState.CurrentButtons = 0;
             CoopState.AxisX = 0f;
             CoopState.AxisY = 0f;
         }
 
-        public void OnNetworkError(System.Net.IPEndPoint endPoint, System.Net.Sockets.SocketError socketError)
+        private void OnReceived(NetDataReader reader)
         {
-            _log.LogWarning("CoopHost: socket error from " + endPoint + ": " + socketError);
-        }
-
-        public void OnNetworkReceiveUnconnected(System.Net.IPEndPoint remoteEndPoint, NetPacketReader reader, UnconnectedMessageType messageType)
-        {
-            _log.LogInfo("CoopHost: unconnected packet from " + remoteEndPoint + " type=" + messageType + " len=" + reader.AvailableBytes);
-            reader.Recycle();
-        }
-
-        public void OnNetworkReceive(NetPeer peer, NetPacketReader reader, DeliveryMethod deliveryMethod)
-        {
-            if (reader.AvailableBytes < 1) { reader.Recycle(); return; }
+            if (reader.AvailableBytes < 1) return;
             var type = (PacketType)reader.GetByte();
             switch (type)
             {
@@ -201,16 +165,6 @@ namespace CupheadCoop.Net
                     _log.LogWarning("CoopHost: unknown packet type " + type);
                     break;
             }
-            reader.Recycle();
-        }
-
-        public void OnNetworkLatencyUpdate(NetPeer peer, int latency) { PingMs = latency; }
-
-        private static byte[] Encode(string s)
-        {
-            var w = new NetDataWriter();
-            w.Put(s);
-            return w.CopyData();
         }
     }
 }

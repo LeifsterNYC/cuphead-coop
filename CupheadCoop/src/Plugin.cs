@@ -18,7 +18,7 @@ namespace CupheadCoop
     public class Plugin : BaseUnityPlugin
     {
         public const string GUID = "leif.cupheadcoop";
-        public const string Version = "0.9.1";
+        public const string Version = "1.0.0";
 
         private Harmony _harmony;
         private CoopHost _host;
@@ -91,9 +91,12 @@ namespace CupheadCoop
                 Logger.LogError("CoopLateApply attach failed: " + ex);
             }
 
-            Logger.LogInfo("Press " + ModConfig.KeyHost.Value + " to host, " + ModConfig.KeyConnect.Value +
-                           " to connect to " + ModConfig.RemoteHost.Value + ":" + ModConfig.Port.Value +
-                           ", " + ModConfig.KeyDisconnect.Value + " to disconnect.");
+            Logger.LogInfo("Transport=" + ModConfig.Transport.Value + ". Press " + ModConfig.KeyHost.Value +
+                           " to host, " + ModConfig.KeyConnect.Value + " to connect (" +
+                           (UseSteamTransport
+                                ? "Steam id " + (ModConfig.HostSteamId.Value == "" ? "<unset>" : ModConfig.HostSteamId.Value)
+                                : ModConfig.RemoteHost.Value + ":" + ModConfig.Port.Value) +
+                           "), " + ModConfig.KeyDisconnect.Value + " to disconnect.");
         }
 
         private void OnDestroy()
@@ -103,9 +106,17 @@ namespace CupheadCoop
             if (_harmony != null) _harmony.UnpatchSelf();
         }
 
+        // [Network] AutoStart: take the configured role once, a few seconds after boot (gives
+        // Rewired discovery + Steam init time to settle). One-shot — a later manual disconnect
+        // stays disconnected. The client role's reconnect loop makes launch order irrelevant.
+        private const float AutoStartDelaySec = 5f;
+        private float _autoStartTimer;
+        private bool _autoStartDone;
+
         private void Update()
         {
             HandleHotkeys();
+            TickAutoStart();
 
             if (CoopState.Mode == CoopMode.Client)
                 CaptureLocalInputForUpload();
@@ -139,6 +150,36 @@ namespace CupheadCoop
         // so it runs AFTER Cuphead's animator and physics writers, instead of before. Plugin keeps
         // its negative execution order purely so Update gets the network packets first.
 
+        private void TickAutoStart()
+        {
+            if (_autoStartDone) return;
+            string role = ModConfig.AutoStart.Value?.Trim();
+            if (string.IsNullOrEmpty(role) || string.Equals(role, "Off", StringComparison.OrdinalIgnoreCase))
+            {
+                _autoStartDone = true;
+                return;
+            }
+            if (CoopState.Mode != CoopMode.Off) { _autoStartDone = true; return; } // user beat us to it
+            _autoStartTimer += Time.unscaledDeltaTime;
+            if (_autoStartTimer < AutoStartDelaySec) return;
+            _autoStartDone = true;
+
+            if (string.Equals(role, "Host", StringComparison.OrdinalIgnoreCase))
+            {
+                Logger.LogInfo("AutoStart: hosting");
+                ToggleHost();
+            }
+            else if (string.Equals(role, "Connect", StringComparison.OrdinalIgnoreCase))
+            {
+                Logger.LogInfo("AutoStart: connecting");
+                ToggleClient();
+            }
+            else
+            {
+                Logger.LogWarning("AutoStart: unknown role '" + role + "' (expected Host/Connect/Off)");
+            }
+        }
+
         private void HandleHotkeys()
         {
             if (Input.GetKeyDown(ModConfig.KeyHost.Value))
@@ -158,13 +199,22 @@ namespace CupheadCoop
             }
         }
 
+        // v1.0.0: transport is config-selected. Steam P2P is the default (free NAT traversal via
+        // Steam relay, no IP/ZeroTier setup); Udp (LiteNetLib) remains for LAN play and for solo
+        // two-instance testing on one PC, where a single Steam account can't dial itself.
+        internal static bool UseSteamTransport =>
+            !string.Equals(ModConfig.Transport.Value, "Udp", StringComparison.OrdinalIgnoreCase);
+
         private void ToggleHost()
         {
             if (_host != null && _host.Running) { Disconnect(); return; }
             if (_client != null) { Disconnect(); }
 
-            _host = new CoopHost(Logger);
-            if (!_host.Start(ModConfig.Port.Value, ModConfig.ConnectKey.Value))
+            IHostTransport transport = UseSteamTransport
+                ? (IHostTransport)new SteamHostTransport(Logger, ModConfig.ConnectKey.Value)
+                : new UdpHostTransport(Logger, ModConfig.Port.Value, ModConfig.ConnectKey.Value);
+            _host = new CoopHost(Logger, transport);
+            if (!_host.Start())
             {
                 _host = null;
                 Logger.LogError("Host start failed.");
@@ -176,8 +226,11 @@ namespace CupheadCoop
             if (_client != null && _client.Running) { Disconnect(); return; }
             if (_host != null) { Disconnect(); }
 
-            _client = new CoopClient(Logger);
-            if (!_client.Start(ModConfig.RemoteHost.Value, ModConfig.Port.Value, ModConfig.ConnectKey.Value))
+            IClientTransport transport = UseSteamTransport
+                ? (IClientTransport)new SteamClientTransport(Logger, ModConfig.HostSteamId.Value, ModConfig.ConnectKey.Value)
+                : new UdpClientTransport(Logger, ModConfig.RemoteHost.Value, ModConfig.Port.Value, ModConfig.ConnectKey.Value);
+            _client = new CoopClient(Logger, transport);
+            if (!_client.Start())
             {
                 _client = null;
                 Logger.LogError("Client start failed.");

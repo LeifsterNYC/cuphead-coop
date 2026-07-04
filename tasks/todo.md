@@ -97,5 +97,16 @@ Client-side HP application unverified — needs real host streaming.
 ### M8 + M9 — client damage suppression (shipped as v0.5.0, **VERIFIED** in-game)
 F10-without-host trick: press F10, take damage in local 2P. Projectile collides, despawns, HP unchanged. M9's Harmony prefix on `PlayerDamageReceiver.TakeDamage` is live and effective.
 
+### v1.0.0 — Steam P2P transport (in progress this session)
+- [x] Transport abstraction: `IHostTransport`/`IClientTransport` (src/Net/Transport.cs); CoopHost/CoopClient are now transport-agnostic protocol layers
+- [x] `UdpTransport` — existing LiteNetLib wire, kept for LAN + solo two-instance testing + MockClient
+- [x] `SteamTransport` — SteamNetworking P2P via Cuphead's bundled Steamworks.NET (Assembly-CSharp-firstpass). Session synthesis: HELLO(key)/BYE/PING/PONG/DATA/DATA_SEQ opcodes; latest-wins ushort seq for snapshots; >1150-byte snapshots ride reliable (Steam drops unreliable >1200B); relay fallback enabled (free NAT traversal)
+- [x] Config: `[Network] Transport = Steam|Udp` (default Steam), `HostSteamId` (client dials host's SteamID64), `AutoStart = Off|Host|Connect` (no-hotkey startup; client retries until host up)
+- [x] Host's SteamID64 shown in overlay + log when hosting (the value the second player needs)
+- [x] BepInEx reinstalled into both installs (was missing entirely — only .doorstop_version remained)
+- [x] Solo smoke test via Goldberg emu — PASSED headless (-batchmode): HELLO/key handshake, Welcome v11, 30Hz snapshots (484 rx), 60Hz inputs (1382 tx), ping keepalive, kill-client → host timeout → re-accept all verified. UDP regression identical (486/1380).
+- [x] v1.0.0 dist bundles built (win zip / mac tar.gz), CLIENT-INSTRUCTIONS updated for Steam flow
+- [ ] Real two-PC Steam test (Windows host + Mac client, real Steam both sides) — needs Leif + second player; Mac must update to v1.0.0 and set HostSteamId
+
 ### Pause sync (shipped as v0.6.0, unverified)
 Host sample → snapshot → client `PauseManager.Pause/Unpause` apply. Local pause input on client is suppressed via Harmony prefix gated on `PauseSync.RemoteDriven`.

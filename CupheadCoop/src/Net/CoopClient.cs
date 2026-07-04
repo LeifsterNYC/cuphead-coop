@@ -1,21 +1,20 @@
-using System;
 using BepInEx.Logging;
 using CupheadCoop.Coop;
-using LiteNetLib;
 using LiteNetLib.Utils;
 using UnityEngine;
 
 namespace CupheadCoop.Net
 {
     /// <summary>
-    /// Client-side networking. Connects to a host and streams local input snapshots up at
-    /// <c>InputSendRateHz</c> Hz. Does not receive game state in M3 — host runs the simulation.
+    /// Client-side protocol layer: connects to a host over whichever transport (UDP or Steam
+    /// P2P) it was constructed with, streams local input up at <c>InputSendRateHz</c>, and
+    /// applies host StateSnapshots into <see cref="CoopState"/>. Owns the reconnect policy —
+    /// transports just report disconnects.
     /// </summary>
-    internal class CoopClient : INetEventListener
+    internal class CoopClient
     {
         private readonly ManualLogSource _log;
-        private NetManager _net;
-        private NetPeer _peer;
+        private readonly IClientTransport _transport;
         private float _accum;
         private uint _seq;
 
@@ -23,77 +22,47 @@ namespace CupheadCoop.Net
         // unintentionally (network timeout, host closed, etc). User-initiated Stop sets
         // _userDisconnected so we don't fight against the user pressing F11/K.
         private const float ReconnectIntervalSec = 3f;
-        private string _lastHost;
-        private int _lastPort;
-        private string _lastConnectKey;
         private bool _userDisconnected;
         private float _reconnectTimer;
         public bool Reconnecting { get; private set; }
         public float SecondsUntilReconnect => Reconnecting ? Mathf.Max(0f, ReconnectIntervalSec - _reconnectTimer) : 0f;
-        public int PingMs { get; private set; }
+        public int PingMs => _transport.PingMs;
+        public string Describe => _transport.Describe;
 
-        public bool Connected => _peer != null && _peer.ConnectionState == ConnectionState.Connected;
-        public bool Running => _net != null && _net.IsRunning;
+        public bool Connected => _transport.Connected;
+        public bool Running => _transport.Running;
 
-        public CoopClient(ManualLogSource log) { _log = log; }
-
-        public bool Start(string host, int port, string connectKey)
+        public CoopClient(ManualLogSource log, IClientTransport transport)
         {
-            _lastHost = host; _lastPort = port; _lastConnectKey = connectKey;
-            _userDisconnected = false;
-            return InternalConnect(initial: true);
+            _log = log;
+            _transport = transport;
+            _transport.ConnectedEvent += OnConnected;
+            _transport.Disconnected += OnDisconnected;
+            _transport.Received += OnReceived;
         }
 
-        private bool InternalConnect(bool initial)
+        public bool Start()
         {
-            try
-            {
-                if (_net == null)
-                {
-                    _net = new NetManager(this);
-                    _net.UnconnectedMessagesEnabled = false;
-                    _net.UpdateTime = 15;
-                    if (!_net.Start())
-                    {
-                        _log.LogError("CoopClient: failed to start NetManager");
-                        _net = null;
-                        return false;
-                    }
-                }
-                _log.LogInfo("CoopClient: " + (initial ? "dialing" : "retrying") + " " + _lastHost + ":" + _lastPort);
-                _peer = _net.Connect(_lastHost, _lastPort, _lastConnectKey);
-                CoopState.Mode = CoopMode.Client;
-                Reconnecting = false;
-                _reconnectTimer = 0f;
-                return true;
-            }
-            catch (Exception ex)
-            {
-                _log.LogError("CoopClient: Connect failed: " + ex.GetType().Name + ": " + ex.Message);
-                _peer = null;
-                if (initial)
-                {
-                    if (_net != null) { try { _net.Stop(); } catch { } _net = null; }
-                    CoopState.Reset();
-                }
-                return false;
-            }
+            _userDisconnected = false;
+            if (!_transport.Connect()) return false;
+            CoopState.Mode = CoopMode.Client;
+            Reconnecting = false;
+            _reconnectTimer = 0f;
+            return true;
         }
 
         public void Stop()
         {
             _userDisconnected = true;
             Reconnecting = false;
-            if (_net != null) { _net.Stop(); _net = null; }
-            _peer = null;
+            _transport.Stop();
             CoopState.Reset();
             _log.LogInfo("CoopClient: stopped");
         }
 
         public void Pump(float dt)
         {
-            if (_net == null) return;
-            _net.PollEvents();
+            _transport.Pump();
 
             if (Reconnecting)
             {
@@ -101,7 +70,7 @@ namespace CupheadCoop.Net
                 if (_reconnectTimer >= ReconnectIntervalSec)
                 {
                     _reconnectTimer = 0f;
-                    InternalConnect(initial: false);
+                    if (_transport.Connect()) Reconnecting = false;
                 }
                 return;
             }
@@ -129,28 +98,26 @@ namespace CupheadCoop.Net
             var f = InputFrame.Pack(_seq, CoopState.LocalButtons, CoopState.LocalAxisX, CoopState.LocalAxisY);
             var w = new NetDataWriter();
             f.Write(w);
-            _peer.Send(w, DeliveryMethod.Unreliable);
+            _transport.Send(w, NetDelivery.Unreliable);
 
             if (ModConfig.Verbose.Value)
                 _log.LogDebug("tx input seq=" + _seq + " btns=" + CoopState.LocalButtons.ToString("X"));
         }
 
-        public void OnPeerConnected(NetPeer peer)
+        private void OnConnected()
         {
-            _log.LogInfo("CoopClient: connected to host " + peer.EndPoint);
+            _log.LogInfo("CoopClient: connected to host (" + _transport.Describe + ")");
         }
 
-        public void OnPeerDisconnected(NetPeer peer, DisconnectInfo disconnectInfo)
+        private void OnDisconnected(string reason)
         {
-            _log.LogWarning("CoopClient: disconnected (" + disconnectInfo.Reason + ")");
-            _peer = null;
+            _log.LogWarning("CoopClient: disconnected (" + reason + ")");
             CoopState.HasRemoteInput = false;
 
             // Auto-reconnect unless the user pressed F11/K. Most disconnect reasons are
-            // recoverable: Timeout (host paused / lost wifi), RemoteConnectionClose (host
-            // pressed F11), ConnectionFailed (host wasn't running yet — retry after host
-            // F9s).
-            if (!_userDisconnected && _net != null)
+            // recoverable: timeout (host paused / lost wifi), host pressed F11, or the host
+            // simply wasn't running yet — retry after they start.
+            if (!_userDisconnected)
             {
                 Reconnecting = true;
                 _reconnectTimer = 0f;
@@ -159,14 +126,9 @@ namespace CupheadCoop.Net
             }
         }
 
-        public void OnNetworkError(System.Net.IPEndPoint endPoint, System.Net.Sockets.SocketError socketError)
+        private void OnReceived(NetDataReader reader)
         {
-            _log.LogWarning("CoopClient: socket error from " + endPoint + ": " + socketError);
-        }
-
-        public void OnNetworkReceive(NetPeer peer, NetPacketReader reader, DeliveryMethod deliveryMethod)
-        {
-            if (reader.AvailableBytes < 1) { reader.Recycle(); return; }
+            if (reader.AvailableBytes < 1) return;
             var type = (PacketType)reader.GetByte();
             switch (type)
             {
@@ -176,13 +138,13 @@ namespace CupheadCoop.Net
                     if (!w.Accepted)
                     {
                         _log.LogError("CoopClient: rejected by host: " + w.Reason);
-                        peer.Disconnect();
+                        Stop();
                     }
                     else if (w.Version != Protocol.Version)
                     {
                         _log.LogError("CoopClient: protocol version mismatch (host=" + w.Version +
                                       " self=" + Protocol.Version + "). Disconnecting — both PCs must run the same plugin build.");
-                        peer.Disconnect();
+                        Stop();
                     }
                     else
                     {
@@ -211,19 +173,6 @@ namespace CupheadCoop.Net
                     _log.LogWarning("CoopClient: unknown packet type " + type);
                     break;
             }
-            reader.Recycle();
-        }
-
-        public void OnNetworkReceiveUnconnected(System.Net.IPEndPoint remoteEndPoint, NetPacketReader reader, UnconnectedMessageType messageType)
-        {
-            reader.Recycle();
-        }
-
-        public void OnNetworkLatencyUpdate(NetPeer peer, int latency) { PingMs = latency; }
-
-        public void OnConnectionRequest(ConnectionRequest request)
-        {
-            request.Reject();
         }
     }
 }

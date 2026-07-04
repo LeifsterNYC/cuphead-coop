@@ -74,7 +74,12 @@ namespace CupheadCoop
             }
             else if (plugin?.HostInstance != null && CoopState.Mode == CoopMode.Host)
             {
-                netHealth = plugin.HostInstance.HasClient ? "  ping=" + plugin.HostInstance.PingMs + "ms" : "  [waiting for client]";
+                // Describe includes the host's SteamID64 on the Steam transport — that's the
+                // value the second player needs for [Network] HostSteamId, so keep it on screen.
+                netHealth = (plugin.HostInstance.HasClient
+                                ? "  ping=" + plugin.HostInstance.PingMs + "ms"
+                                : "  [waiting for client]") +
+                            "  (" + plugin.HostInstance.Describe + ")";
             }
 
             string line1 = "CupheadCoop v" + Plugin.Version + "  mode=" + mode + netHealth +
