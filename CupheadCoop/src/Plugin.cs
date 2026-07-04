@@ -48,8 +48,10 @@ namespace CupheadCoop
                 EntitySync.Log = Logger;
                 SceneSync.Log = Logger;
                 P2AutoJoin.Log = Logger;
+                TestHarness.Log = Logger;
                 ProjectileSync.Log = Logger;
                 SnapshotInterpolation.Log = Logger;
+                PlayerDeathSync.Log = Logger;
                 TypeRegistry.Log = Logger;
                 EntitySync.Wire();
                 LogTap.Wire();
@@ -64,6 +66,9 @@ namespace CupheadCoop
             try
             {
                 RewiredPatches.Apply(_harmony);
+                // Save-blocking is patched manually (by-name lookup) so a signature mismatch on a
+                // different platform build degrades to a warning instead of crashing init.
+                TestHarness.WireBlockSaves(_harmony);
                 int patchCount = 0;
                 foreach (var _ in _harmony.GetPatchedMethods()) patchCount++;
                 Logger.LogInfo("Harmony patches applied: " + patchCount);
@@ -120,7 +125,12 @@ namespace CupheadCoop
             TickAutoStart();
 
             if (CoopState.Mode == CoopMode.Client)
+            {
                 CaptureLocalInputForUpload();
+                // AutoPlay (test harness) overwrites the just-captured upload with a scripted
+                // pattern. Must run before the pump ships this frame's input.
+                TestHarness.FillClientUpload();
+            }
 
             _host?.Pump();
             _client?.Pump(Time.unscaledDeltaTime);
@@ -129,6 +139,10 @@ namespace CupheadCoop
             // Both host and client may have queued a P2 auto-join.
             if (CoopState.Mode != CoopMode.Off)
                 P2AutoJoin.TickIfPending();
+
+            // Test harness: advance scripted-input state, drive one-shot level load / P2 kill.
+            // All no-ops unless a [Debug] test flag is set.
+            TestHarness.Tick(this);
         }
 
         // CRITICAL: also pump the host network in FixedUpdate. Cuphead's ArcadePlayerMotor.HandleInput

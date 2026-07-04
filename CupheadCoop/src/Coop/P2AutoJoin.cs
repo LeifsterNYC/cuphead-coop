@@ -46,45 +46,55 @@ namespace CupheadCoop.Coop
             if (!ModConfig.EnableAutoP2Join.Value) { _pending = false; return; }
             _pending = false;
 
+            if (!ForceJoin(1, global::PlayerId.PlayerTwo)) _pending = true; // retry next tick
+        }
+
+        /// <summary>
+        /// Force a player slot to Joined and fire OnPlayerJoinedEvent, exactly as Cuphead's own
+        /// join flow would. Idempotent. Returns false if PlayerManager state isn't ready yet
+        /// (caller may retry). Also used by TestHarness to join P1 when no human pressed start.
+        /// </summary>
+        internal static bool ForceJoin(int slotIndex, global::PlayerId id)
+        {
             try
             {
-                if (!ResolveReflection()) return;
+                if (!ResolveReflection()) return false;
 
                 var slots = (Array)_slotsField.GetValue(null);
-                if (slots == null || slots.Length < 2)
+                if (slots == null || slots.Length <= slotIndex)
                 {
                     Log?.LogWarning("P2AutoJoin: playerSlots array not initialized yet — will retry");
-                    _pending = true;
-                    return;
+                    return false;
                 }
 
-                var p2Slot = slots.GetValue(1);
-                if (p2Slot == null)
+                var slot = slots.GetValue(slotIndex);
+                if (slot == null)
                 {
-                    Log?.LogWarning("P2AutoJoin: playerSlots[1] is null — will retry");
-                    _pending = true;
-                    return;
+                    Log?.LogWarning("P2AutoJoin: playerSlots[" + slotIndex + "] is null — will retry");
+                    return false;
                 }
 
-                var currentJoinState = _slotJoinStateField.GetValue(p2Slot);
+                var currentJoinState = _slotJoinStateField.GetValue(slot);
                 if (Equals(currentJoinState, _joinStateJoinedValue))
                 {
-                    Log?.LogInfo("P2AutoJoin: P2 already Joined; nothing to do");
-                    return;
+                    Log?.LogInfo("P2AutoJoin: " + id + " already Joined; nothing to do");
+                    return true;
                 }
 
-                _slotCanJoinField.SetValue(p2Slot, true);
-                _slotJoinStateField.SetValue(p2Slot, _joinStateJoinedValue);
-                _slotControllerStateField.SetValue(p2Slot, _controllerStateNoController);
+                _slotCanJoinField.SetValue(slot, true);
+                _slotJoinStateField.SetValue(slot, _joinStateJoinedValue);
+                _slotControllerStateField.SetValue(slot, _controllerStateNoController);
                 _multiplayerField.SetValue(null, true);
 
-                FireOnPlayerJoinedEvent();
+                FireOnPlayerJoinedEvent(id);
 
-                Log?.LogInfo("P2AutoJoin: forced P2 to Joined state and fired OnPlayerJoinedEvent");
+                Log?.LogInfo("P2AutoJoin: forced " + id + " to Joined state and fired OnPlayerJoinedEvent");
+                return true;
             }
             catch (Exception ex)
             {
                 Log?.LogError("P2AutoJoin failed: " + ex.GetType().Name + ": " + ex.Message);
+                return true; // don't retry-loop on a hard failure
             }
         }
 
@@ -129,14 +139,14 @@ namespace CupheadCoop.Coop
             return true;
         }
 
-        private static void FireOnPlayerJoinedEvent()
+        private static void FireOnPlayerJoinedEvent(global::PlayerId id)
         {
             if (_eventField == null) return;
             var del = _eventField.GetValue(null) as MulticastDelegate;
             if (del == null) { Log?.LogInfo("P2AutoJoin: OnPlayerJoinedEvent has no subscribers"); return; }
             try
             {
-                del.DynamicInvoke(global::PlayerId.PlayerTwo);
+                del.DynamicInvoke(id);
             }
             catch (Exception ex)
             {

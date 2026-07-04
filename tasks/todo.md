@@ -139,6 +139,14 @@ animations not synced, deaths, etc." Root causes found by code audit; none archi
 - [x] BONUS bug found by the new diagnostics: host snapshot accumulator reset to 0 instead of
       subtracting the interval — every session to date actually streamed at ~20 Hz, not 30
       (at 60 fps, 33ms threshold fires every 3rd frame). Fixed with subtract + burst cap.
+- [x] Autonomous headless gameplay test (2026-07-04): TestHarness (BlockSaves / AutoLoadLevel /
+      AutoPlay / KillP2AfterSec, all [Debug]-gated, default off) drove two headless instances
+      into a real Veggies fight with scripted inputs. VERIFIED: scene sync into the level,
+      entity sync 1 hit/0 miss, projectiles binding continuously, 30.0Hz / age<=33ms, zero
+      exceptions, and death mirroring live — client hid P2's 6 renderers when the boss killed
+      P2 on host, restored them when the level ended. Real save files md5-verified untouched
+      (BlockSaves). Note: agent shells run in Windows Session 0 — windowed launches are
+      impossible from automation; visual runs need the user to start run-visual-test.ps1.
 - [ ] Real two-PC re-test (Windows host + Mac client, both on v1.1.0)
 
 ### Pause sync (shipped as v0.6.0, unverified)

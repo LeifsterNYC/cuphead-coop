@@ -25,6 +25,13 @@ namespace CupheadCoop
         public static ConfigEntry<bool> DebugForceP2WalkRight;
         public static ConfigEntry<bool> Verbose;
 
+        // Automated-test harness. All default OFF — see TestHarness.cs. These are for driving two
+        // instances from a script; they have no place in normal play.
+        public static ConfigEntry<bool> BlockSaves;
+        public static ConfigEntry<string> AutoLoadLevel;
+        public static ConfigEntry<bool> AutoPlay;
+        public static ConfigEntry<int> KillP2AfterSec;
+
         // Per-feature kill switches. Default ON; flip OFF to bisect which sync layer is causing
         // visible problems on the client. The wire format is unchanged — host always sends, client
         // chooses whether to apply.
@@ -84,6 +91,20 @@ namespace CupheadCoop
                 "If true, with no active session, forces Player 2's MoveHorizontal axis to +1.0. Used to verify the input intercept works without networking.");
             Verbose = cfg.Bind("Debug", "Verbose", false,
                 "Log per-frame input traffic. Noisy.");
+
+            BlockSaves = cfg.Bind("Debug", "BlockSaves", false,
+                "AUTOMATED TESTING ONLY. Blocks every .sav disk write (OnlineInterfaceSteam.SaveCloudData, the sole " +
+                "path for save-progress AND settings-cloud writes) so the harness can never touch the SHARED real save " +
+                "in %AppData%\\Cuphead. The game is told the save succeeded. Leave OFF for normal play.");
+            AutoLoadLevel = cfg.Bind("Debug", "AutoLoadLevel", "",
+                "AUTOMATED TESTING ONLY. When non-empty and hosting with a client connected, auto-loads the named boss " +
+                "level a few seconds after the session is ready (e.g. 'Veggies', 'Slime', 'Flower'). Case-insensitive. One-shot.");
+            AutoPlay = cfg.Bind("Debug", "AutoPlay", false,
+                "AUTOMATED TESTING ONLY. Drives scripted move/jump/shoot input so the cups act without a human. On host it " +
+                "drives Player 1; on client it drives the uploaded input (host's Player 2), phase-shifted so the two cups differ.");
+            KillP2AfterSec = cfg.Bind("Debug", "KillP2AfterSec", 0,
+                "AUTOMATED TESTING ONLY. 0 = off. When > 0 and hosting inside a boss level (scene_level*), kills Player 2 " +
+                "through the game's own damage path after this many seconds — to verify death mirroring. One-shot.");
 
             // Kill switches let the tester flip individual sync layers off without rebuilding,
             // to bisect which layer is breaking the in-game experience. All default ON.

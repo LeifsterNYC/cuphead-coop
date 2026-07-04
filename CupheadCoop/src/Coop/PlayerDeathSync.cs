@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using BepInEx.Logging;
 using UnityEngine;
 
 namespace CupheadCoop.Coop
@@ -17,6 +18,8 @@ namespace CupheadCoop.Coop
     /// </summary>
     internal static class PlayerDeathSync
     {
+        public static ManualLogSource Log;
+
         // How long a player must be continuously absent (while the other is present) before we
         // treat it as dead/despawned rather than a momentary scene-transition blip.
         private const float AbsentGraceSec = 0.3f;
@@ -100,9 +103,13 @@ namespace CupheadCoop.Coop
                     }
                 }
                 hidden = true;
+                Log?.LogInfo("PlayerDeathSync: hid " + hidList.Count + " renderers for " + id
+                             + " (host reports dead/absent)");
             }
             else
             {
+                Log?.LogInfo("PlayerDeathSync: restored " + hidList.Count + " renderers for " + id
+                             + " (revived/respawned)");
                 Unhide(hidList);
                 hidden = false;
             }

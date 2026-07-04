@@ -157,6 +157,9 @@ namespace CupheadCoop.Coop
         [HarmonyPostfix]
         private static void GetButton_Postfix(Player __instance, int actionId, ref bool __result)
         {
+            // Test harness: scripted host-P1 input (AutoPlay). No-op unless AutoPlay is on and this
+            // is the host's local P1; TestHarness self-gates and is allocation-free.
+            if (__instance != null && TestHarness.TryP1Button(__instance.id, actionId, 0, ref __result)) return;
             if (!ShouldOverride(__instance)) return;
 
             if (CupheadCoop.Coop.CoopState.Mode == CoopMode.Host &&
@@ -174,6 +177,7 @@ namespace CupheadCoop.Coop
         [HarmonyPostfix]
         private static void GetButtonDown_Postfix(Player __instance, int actionId, ref bool __result)
         {
+            if (__instance != null && TestHarness.TryP1Button(__instance.id, actionId, 1, ref __result)) return;
             if (!ShouldOverride(__instance)) return;
             if (CupheadCoop.Coop.CoopState.Mode == CoopMode.Host &&
                 CupheadCoop.Coop.CoopState.HasRemoteInput)
@@ -186,6 +190,7 @@ namespace CupheadCoop.Coop
         [HarmonyPostfix]
         private static void GetButtonUp_Postfix(Player __instance, int actionId, ref bool __result)
         {
+            if (__instance != null && TestHarness.TryP1Button(__instance.id, actionId, 2, ref __result)) return;
             if (!ShouldOverride(__instance)) return;
             if (CupheadCoop.Coop.CoopState.Mode == CoopMode.Host &&
                 CupheadCoop.Coop.CoopState.HasRemoteInput)
@@ -198,6 +203,8 @@ namespace CupheadCoop.Coop
         [HarmonyPostfix]
         private static void GetAxis_Postfix(Player __instance, int actionId, ref float __result)
         {
+            // Test harness: scripted host-P1 MoveHorizontal (AutoPlay).
+            if (__instance != null && TestHarness.TryP1Axis(__instance.id, actionId, ref __result)) return;
             if (!ShouldOverride(__instance)) return;
 
             // Cuphead uses actionId 0 = MoveHorizontal, 1 = MoveVertical.
