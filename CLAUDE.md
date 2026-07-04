@@ -11,12 +11,14 @@ Originally built on a Windows machine where the host plays. The Mac side is the 
 
 ## Status
 
-- **M1 (Harmony intercept of Player 2 input)** — verified in-game on Windows. The `ForceP2WalkRight` debug flag autonomously walks Player 2 right, proving the patch lands on `Rewired.Player.GetAxis`.
-- **M2 (LiteNetLib UDP transport, host + client)** — code complete, built, deployed. Not yet exercised across two machines.
-- **M3 (client→host input streaming, edge detection, version handshake)** — code complete, not yet tested.
-- **M4 (host→client visual sync)** — not started. Currently the client runs its own simulation locally and the two screens diverge. M4 will stream host transforms back so the client sees what the host sees.
+> This section goes stale fast — `tasks/todo.md` (milestone log) and `git log` are the
+> source of truth. Snapshot as of v1.0.0 (July 2026):
 
-What's NOT done: NAT punch (LAN/ZeroTier only), in-game UI (hotkeys + IMGUI overlay only), state persistence between sessions.
+- **Input intercept, transport, input streaming, visual sync (players/animators/entities/projectiles/HP/pause/scene), HKMP-style client AI suppression, remote-motor bypass** — all shipped through v0.9.1; parts verified in-game, parts still awaiting a real two-PC session.
+- **v1.0.0: transport is now selectable** — `[Network] Transport = Steam|Udp`. Steam P2P rides Cuphead's own bundled Steamworks.NET (NAT traversal via Steam relay — no IP/ZeroTier setup; client dials the host's SteamID64 from `HostSteamId`). LiteNetLib UDP remains for LAN and solo two-instance testing. `AutoStart = Off|Host|Connect` removes the hotkey dance. Steam + UDP paths both smoke-tested solo via Goldberg emu, headless `-batchmode`.
+- **Next**: real two-PC Steam test (Windows host + Mac client on v1.0.0), then in-game gameplay-sync verification of the v0.9.x layers.
+
+What's NOT done: in-game UI (hotkeys + IMGUI overlay only), death-sequence mirroring (M8.5), state persistence between sessions.
 
 ## Repo map
 
