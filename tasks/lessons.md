@@ -54,3 +54,12 @@ than configured, and nobody noticed until the v1.1.0 10s sync-health log printed
 **Rule: fixed-rate tickers must `accum -= interval` (with a one-interval cap against
 post-hitch bursts). And rate-instrument everything — the bug was invisible until a
 diagnostic printed the actual rate.**
+
+## Don't hand over for human testing with known gaps (2026-07-04)
+Leif tested v1.1.0 and hit a wall of issues (no walk-left/shoot/damage animations on
+client, no game-over mirroring, no lives HUD) — several were on my own "known gaps"
+list, shipped anyway. His correction: "implement EVERYTHING WELL then i will test."
+**Rule: human test sessions are expensive — batch features until the known-gap list is
+EMPTY, autonomously verify each (harness + logs + decompile-informed assertions), and
+only then request a human test. Never ship a build whose failure modes I can already
+name.**
