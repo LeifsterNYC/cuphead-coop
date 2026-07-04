@@ -14,9 +14,9 @@ Hi! You're the **client**. The other PC runs the game's simulation; your PC stre
 1. Open Terminal and `cd` to wherever you saved the files. Then:
    ```sh
    chmod +x setup-mac.sh
-   ./setup-mac.sh <host-ip-or-anything>
+   ./setup-mac.sh <host-steamid64>
    ```
-   (The IP argument only matters for the legacy Udp transport; any placeholder works if you're using Steam.)
+   (If you already have the host's 17-digit SteamID64, pass it here and step 2 is done for you. You can also run the script with no argument and fill the ID into the config later. No IPs anywhere — that's only for the legacy Udp fallback.)
 
    The script:
    - Auto-finds Cuphead in `~/Library/Application Support/Steam/steamapps/common/Cuphead/`
@@ -25,7 +25,7 @@ Hi! You're the **client**. The other PC runs the game's simulation; your PC stre
    - Drops the plugin into `BepInEx/plugins/`
    - Pre-seeds the config
 
-2. **Set the host's Steam ID in the config.** Edit
+2. **Set the host's Steam ID in the config** (skip if you passed it to the script). Edit
    `~/Library/Application Support/Steam/steamapps/common/Cuphead/BepInEx/config/leif.cupheadcoop.cfg`:
    ```ini
    [Network]

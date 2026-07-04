@@ -2,10 +2,17 @@
 # CupheadCoop client installer for native macOS Cuphead.
 #
 # Usage:
-#   ./setup-mac.sh <host-ip-or-zerotier-address> [path-to-Cuphead-folder]
+#   ./setup-mac.sh [host-steamid64-or-ip] [path-to-Cuphead-folder]
+#
+# The first argument is optional:
+#   - a 17-digit SteamID64  → Steam transport (the normal case; no IPs involved)
+#   - an IP address         → legacy Udp transport (LAN/ZeroTier fallback)
+#   - omitted               → Steam transport; put the host's SteamID64 in the
+#                             config afterwards (HostSteamId in leif.cupheadcoop.cfg)
 #
 # Example:
-#   ./setup-mac.sh 192.168.0.4
+#   ./setup-mac.sh 76561198000000000
+#   ./setup-mac.sh
 #   ./setup-mac.sh 10.242.74.251 "/Users/me/Library/Application Support/Steam/steamapps/common/Cuphead"
 #
 # Pre-reqs:
@@ -15,10 +22,21 @@
 
 set -euo pipefail
 
-HOST_IP="${1:-}"
+HOST_ARG="${1:-}"
 CUPHEAD_DIR="${2:-}"
 PORT="47777"
 CONNECT_KEY="cuphead-coop-v0"
+
+# Classify the first arg: SteamID64 (17 digits) vs IP (Udp fallback) vs empty.
+TRANSPORT="Steam"
+HOST_STEAM_ID=""
+REMOTE_HOST="127.0.0.1"
+if [[ "$HOST_ARG" =~ ^[0-9]{17}$ ]]; then
+  HOST_STEAM_ID="$HOST_ARG"
+elif [[ -n "$HOST_ARG" ]]; then
+  TRANSPORT="Udp"
+  REMOTE_HOST="$HOST_ARG"
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # BepInEx 5.4.23.5 macOS_universal ships a Preloader.dll that crashes on launch with
@@ -30,11 +48,6 @@ BEPINEX_URL="https://github.com/BepInEx/BepInEx/releases/download/v5.4.22/BepInE
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-
-if [[ -z "$HOST_IP" ]]; then
-  echo "usage: $0 <host-ip-or-zerotier-address> [path-to-cuphead-folder]" >&2
-  exit 1
-fi
 
 # Locate the plugin payload. Safari on macOS auto-extracts .zip files, so we accept either:
 #   (a) CupheadCoop-v0.1.0.zip sitting next to the script,
@@ -95,7 +108,7 @@ fi
 
 if [[ -z "$CUPHEAD_DIR" || ! -d "$CUPHEAD_DIR" ]]; then
   echo "error: couldn't auto-find Cuphead. Pass the install folder as the second arg." >&2
-  echo "       e.g. $0 $HOST_IP \"$HOME/Library/Application Support/Steam/steamapps/common/Cuphead\"" >&2
+  echo "       e.g. $0 $HOST_ARG \"$HOME/Library/Application Support/Steam/steamapps/common/Cuphead\"" >&2
   exit 2
 fi
 
@@ -157,7 +170,7 @@ else
 fi
 xattr -dr com.apple.quarantine "$CUPHEAD_DIR/BepInEx/plugins/CupheadCoop" 2>/dev/null || true
 
-# 4. Pre-write the plugin config with the host IP and sensible defaults.
+# 4. Pre-write the plugin config with sensible defaults.
 mkdir -p "$CUPHEAD_DIR/BepInEx/config"
 cat > "$CUPHEAD_DIR/BepInEx/config/leif.cupheadcoop.cfg" <<EOF
 ## CupheadCoop config — pre-seeded by setup-mac.sh.
@@ -179,11 +192,29 @@ SendRateHz = 60
 BufferFrames = 2
 
 [Network]
-RemoteHost = $HOST_IP
+# Steam = P2P over Steam's network (no IPs/port forwarding; needs HostSteamId).
+# Udp   = direct IP (LAN/ZeroTier fallback; needs RemoteHost + reachable port).
+Transport = $TRANSPORT
+HostSteamId = $HOST_STEAM_ID
+RemoteHost = $REMOTE_HOST
 Port = $PORT
 ConnectKey = $CONNECT_KEY
+# Set AutoStart = Connect to dial the host automatically a few seconds after
+# the game boots (retries until the host is up) — no hotkey needed.
+AutoStart = Off
 EOF
-echo "✓ Plugin config written (RemoteHost = $HOST_IP, Port = $PORT)"
+if [[ "$TRANSPORT" == "Steam" ]]; then
+  if [[ -n "$HOST_STEAM_ID" ]]; then
+    echo "✓ Plugin config written (Transport = Steam, HostSteamId = $HOST_STEAM_ID)"
+  else
+    echo "✓ Plugin config written (Transport = Steam)"
+    echo "  ⚠ No SteamID64 given — before connecting, set HostSteamId in"
+    echo "    $CUPHEAD_DIR/BepInEx/config/leif.cupheadcoop.cfg"
+    echo "    (the 17-digit number the host reads off their overlay/log when hosting)"
+  fi
+else
+  echo "✓ Plugin config written (Transport = Udp, RemoteHost = $REMOTE_HOST, Port = $PORT)"
+fi
 
 # 5. Enable BepInEx console on macOS — uses the launching Terminal as console.
 BEP_CFG="$CUPHEAD_DIR/BepInEx/config/BepInEx.cfg"
@@ -207,8 +238,8 @@ Last manual step (Steam can't be edited from a script):
 ────────────────────────────────────────
 
 In-game:
-  • Start a single-player game (or local 2-player for M4 spectator-view).
-  • Press J to connect to $HOST_IP:$PORT.
+  • Wait for the host to press Host (F9) on their side.
+  • Press J to connect$( [[ "$TRANSPORT" == "Udp" ]] && echo " to $REMOTE_HOST:$PORT" || echo " (over Steam — the host's SteamID64 from the config)" ).
   • Top-left overlay should switch to mode=Client; the BepInEx log will show
     "CoopClient: dialing …" then "CoopClient: handshake ok".
   • Press K to disconnect when you're done.
