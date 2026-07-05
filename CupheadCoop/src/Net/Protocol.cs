@@ -39,7 +39,16 @@ namespace CupheadCoop.Net
         //       drift-resynced; (c) EntitySync no longer hashes projectiles (ProjectileSync owns
         //       them), so a v11 host paired with a v12 client would double-track projectiles;
         //       (d) minimal client-side death mirroring hides dead/absent cups' sprites.
-        public const int Version = 12;
+        // v13 = v1.2.0 full-fidelity player rendering. PlayerSnapshot gains a Flags byte
+        //       (Grounded/Locked/Dashing/IsShooting/IsUsingSuperOrEx/Invulnerable/DashDirSign) and
+        //       a Pulses byte (WeaponFired/DamageTaken edges since last snapshot, consumed once by
+        //       the client). StateSnapshot gains a LevelFlags byte (LevelWon latch, LevelReload
+        //       pulse). The client stops scrubbing player animators (layer-0 Play every frame) and
+        //       instead runs the game's own LevelPlayerAnimationController locally, forcing its
+        //       polled inputs (LookDirection/MoveDirection/Grounded/Locked + weaponManager.IsShooting)
+        //       from these flags and synthesizing its edge events (OnShotFired / hit / flash) from
+        //       the pulses. A v12 client paired with a v13 host would misread the wire, hence the bump.
+        public const int Version = 13;
     }
 
     internal enum PacketType : byte
@@ -154,6 +163,14 @@ namespace CupheadCoop.Net
         public uint Buttons;   // v10: Rewired button bitmask, bit n = action id n (0..27 used by Cuphead).
         public sbyte AxisX_q;  // v10: -100..+100 fixed-point quantization, same scheme as InputFrame.AxisX.
         public sbyte AxisY_q;
+        // v13: host-sampled motor/weapon state so client can drive the game's own animation
+        // controller instead of scrubbing. Bit layout mirrored by CoopState.Flag* constants:
+        //   bit0 Grounded, bit1 Locked, bit2 Dashing, bit3 IsShooting,
+        //   bit4 IsUsingSuperOrEx, bit5 Invulnerable (damageReceiver.state), bit6 DashDirSign (1=+).
+        public byte Flags;
+        // v13: edge events since the previous snapshot, latched host-side and consumed once by the
+        // client. Bit layout mirrored by CoopState.Pulse* constants: bit0 WeaponFired, bit1 DamageTaken.
+        public byte Pulses;
 
         public float UnpackAxisX => AxisX_q / 100f;
         public float UnpackAxisY => AxisY_q / 100f;
@@ -171,6 +188,8 @@ namespace CupheadCoop.Net
             w.Put(Buttons);
             w.Put(AxisX_q);
             w.Put(AxisY_q);
+            w.Put(Flags);
+            w.Put(Pulses);
         }
 
         public static PlayerSnapshot Read(NetDataReader r)
@@ -187,7 +206,9 @@ namespace CupheadCoop.Net
                 IsDead = r.GetBool(),
                 Buttons = r.GetUInt(),
                 AxisX_q = r.GetSByte(),
-                AxisY_q = r.GetSByte()
+                AxisY_q = r.GetSByte(),
+                Flags = r.GetByte(),
+                Pulses = r.GetByte()
             };
         }
     }
@@ -311,6 +332,20 @@ namespace CupheadCoop.Net
         // signals destruction; client destroys its bound local instance.
         public byte ProjectileCount;
         public ProjectileSnapshot[] Projectiles;
+        // v13: level-lifecycle bits the client can't derive from scene-name diffing (which drives
+        // SceneSync). Bit layout mirrored by CoopState.LevelFlag* constants:
+        //   bit0 LevelWon (latched while the host's win sequence runs, so the client can play its
+        //        own cosmetic KO animation — wave 2), bit1 LevelReload (pulse when the host calls
+        //        SceneLoader.ReloadLevel(); a same-name reload is invisible to SceneSync's name diff).
+        public byte LevelFlags;
+        // v13 wave 2: host-authoritative streamed SFX. Appended AFTER LevelFlags so the wire layout
+        // stays consistent with wave 1's field order. Each entry = kind byte (0=Play, 1=PlayLoop,
+        // 2=Stop) + key string. Coalesced + deduped per snapshot and capped at AudioSync.MaxSfxPerTick
+        // host-side. A dropped snapshot loses its SFX (fine for one-shots; the client reconciles
+        // PlayLoop/Stop pairs via its own tracked-loop cleanup so a lost Stop can't leave a stuck loop).
+        public byte SfxCount;
+        public byte[] SfxKinds;   // length >= SfxCount; only [0..SfxCount) are valid
+        public string[] SfxKeys;  // length >= SfxCount; only [0..SfxCount) are valid
 
         public void Write(NetDataWriter w)
         {
@@ -327,6 +362,13 @@ namespace CupheadCoop.Net
             for (int i = 0; i < AliveHashCount; i++) w.Put(AliveHashes[i]);
             w.Put(ProjectileCount);
             for (int i = 0; i < ProjectileCount; i++) Projectiles[i].Write(w);
+            w.Put(LevelFlags);
+            w.Put(SfxCount);
+            for (int i = 0; i < SfxCount; i++)
+            {
+                w.Put(SfxKinds[i]);
+                w.Put(SfxKeys[i] ?? "");
+            }
         }
 
         public static StateSnapshot Read(NetDataReader r)
@@ -349,6 +391,18 @@ namespace CupheadCoop.Net
             s.ProjectileCount = r.GetByte();
             s.Projectiles = s.ProjectileCount > 0 ? new ProjectileSnapshot[s.ProjectileCount] : null;
             for (int i = 0; i < s.ProjectileCount; i++) s.Projectiles[i] = ProjectileSnapshot.Read(r);
+            s.LevelFlags = r.GetByte();
+            s.SfxCount = r.GetByte();
+            if (s.SfxCount > 0)
+            {
+                s.SfxKinds = new byte[s.SfxCount];
+                s.SfxKeys = new string[s.SfxCount];
+                for (int i = 0; i < s.SfxCount; i++)
+                {
+                    s.SfxKinds[i] = r.GetByte();
+                    s.SfxKeys[i] = r.GetString();
+                }
+            }
             return s;
         }
     }

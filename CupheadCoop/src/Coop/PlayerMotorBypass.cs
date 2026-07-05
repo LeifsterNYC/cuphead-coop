@@ -1,4 +1,5 @@
 using HarmonyLib;
+using UnityEngine;
 
 namespace CupheadCoop.Coop
 {
@@ -9,26 +10,30 @@ namespace CupheadCoop.Coop
     ///
     /// Why: prior architectures (input mirroring, NetworkID-binding, AI-suppression-by-enabled-flag)
     /// all let client run a parallel sim of the player motor and tried to correct via streamed
-    /// snapshots. The two sims diverge faster than corrections can keep up — boss attack timing,
-    /// jump/dash physics, projectile spawn order all desync.
+    /// snapshots. The two sims diverge faster than corrections can keep up.
     ///
-    /// Solution: on client, skip the motor's FixedUpdate body entirely for both P1 and P2.
-    /// Drive their visible state purely from host's stream:
-    ///   - transform.position is written SOLELY by ScenePuppetry.ClientApply, which runs in the
-    ///     +32000 LateUpdate off the interpolated snapshot stream. This bypass no longer touches
-    ///     position at all (a second FixedUpdate-rate lerp here fought the interpolated LateUpdate
-    ///     write and produced jitter).
-    ///   - LookDirection / TrueLookDirection / MoveDirection / Grounded forced via Traverse
-    ///     (HarmonyLib's reflection helper) so animators and other systems read coherent state
-    ///   - Animator state (which is also part of the streamed PlayerSnapshot) gets played by
-    ///     ScenePuppetry.ClientApply elsewhere
-    /// On host, motor runs unchanged (P1 with local input; P2 with network-forwarded input via
-    /// the existing RewiredPatches GetButton/GetAxis postfix on Player 2's id).
+    /// Solution: on client, skip the motor's FixedUpdate body entirely for both P1 and P2, and drive
+    /// the motor's *polled* state so the game's own animation controller (which keeps running on the
+    /// client as of v1.2.0) renders the player faithfully:
+    ///   - transform.position is written SOLELY by ScenePuppetry.ClientApply (interpolated, +32000
+    ///     LateUpdate). This bypass never touches position.
+    ///   - LookDirection / TrueLookDirection / MoveDirection / Grounded / Locked are forced via
+    ///     Traverse from the streamed input mirror + <see cref="CoopState.RemoteP1Flags"/> so the
+    ///     animation controller's Update reads coherent state (run/idle/turn/aim, grounded/air).
+    ///   - weaponManager.IsShooting is forced from the Shooting flag so the shoot-layer weights the
+    ///     controller sets each frame render the shooting pose.
+    ///   - Edge events the controller drives off game events (which never fire on the client because
+    ///     FixedUpdate is skipped) are synthesized from the streamed Pulses: WeaponFired →
+    ///     OnShotFired(); DamageTaken → play Hit + set hitAnimation. The Invulnerable flag is mirrored
+    ///     onto damageReceiver.state so the controller's flash_cr blinks the cup.
     ///
-    /// Trilean2 / Trilean: Cuphead's custom -1/0/+1 type used for input-direction state. We have
-    /// LookX / LookY as int8 in PlayerSnapshot's Facing already — re-using Facing as LookX for
-    /// minimal wire change. LookY isn't streamed yet (would need wire bump); for now we set it to 0
-    /// (looking straight). Acceptable approximation for v0.9.1.
+    /// v1.2.0 removed the old approach of scrubbing the player animator to a streamed hash every
+    /// frame — layer-0 scrubbing couldn't render the weighted shoot layers and fought the controller's
+    /// own facing flip. Local-driven animation replaces it. NOT forced (no setter exists / out of
+    /// v1.2.0 scope): Dashing, DashDirection, IsUsingSuperOrEx — Chalice/super/EX/dash are a known
+    /// visual limitation this wave; the flags are still on the wire for a later wave.
+    ///
+    /// On host, the motor runs unchanged (P1 with local input; P2 with network-forwarded input).
     /// </summary>
     [HarmonyPatch]
     internal static class PlayerMotorBypass
@@ -43,8 +48,7 @@ namespace CupheadCoop.Coop
             if (__instance == null || __instance.player == null) return true;
             if (!ModConfig.EnableRemoteMotorBypass.Value) return true;
 
-            var id = __instance.player.id;
-            ApplyLevelMotorState(__instance, id);
+            ApplyLevelMotorState(__instance, __instance.player.id);
             return false; // skip the original FixedUpdate body
         }
 
@@ -52,39 +56,36 @@ namespace CupheadCoop.Coop
         {
             try
             {
-                bool present;
-                sbyte facing;
-                if (id == global::PlayerId.PlayerOne)
-                {
-                    present = CoopState.RemoteP1Present;
-                    facing = CoopState.RemoteP1Facing;
-                }
-                else
-                {
-                    present = CoopState.RemoteP2Present;
-                    facing = CoopState.RemoteP2Facing;
-                }
+                bool isP1 = id == global::PlayerId.PlayerOne;
+                bool present = isP1 ? CoopState.RemoteP1Present : CoopState.RemoteP2Present;
                 if (!present) return;
+                byte flags = isP1 ? CoopState.RemoteP1Flags : CoopState.RemoteP2Flags;
 
-                // Position is written by ScenePuppetry.ClientApply (interpolated, +32000 LateUpdate)
-                // — deliberately not touched here.
+                bool grounded = (flags & CoopState.FlagGrounded) != 0;
+                bool locked = (flags & CoopState.FlagLocked) != 0;
+                bool superEx = (flags & CoopState.FlagSuperEx) != 0;
 
-                // Force motor's private-set properties via Traverse so animators / weapon managers
-                // / aim logic see coherent direction state. Without this, the motor's internal
-                // LookDirection stays at whatever value the (now-skipped) HandleLooking would have
-                // set, which is just stale — the cup would face the wrong way.
-                int lookX = facing;
+                int lookX, lookY;
+                DeriveLook(isP1, grounded, locked, superEx, out lookX, out lookY);
+
                 var trav = Traverse.Create(motor);
-                trav.Property("LookDirection").SetValue(new global::Trilean2(lookX, 0));
-                trav.Property("TrueLookDirection").SetValue(new global::Trilean2(lookX, 0));
-                // MoveDirection drives the running animator parameter; mirror look direction
-                // when present is true and it's nonzero (very rough proxy — better with full
-                // input mirror in PlayerSnapshot but acceptable for v0.9.1).
-                trav.Property("MoveDirection").SetValue(new global::Trilean2(lookX, 0));
-                // Grounded — without this, the cup is animated as airborne even when host says
-                // it's on the floor. We don't have a Grounded bit yet; assume true for now.
-                // Adding to wire format would refine.
-                trav.Property("Grounded").SetValue(true);
+                int trueX = lookX != 0 ? lookX : motor.TrueLookDirection.x;
+                trav.Property("LookDirection").SetValue(new global::Trilean2(lookX, lookY));
+                trav.Property("TrueLookDirection").SetValue(new global::Trilean2(trueX, lookY));
+                trav.Property("MoveDirection").SetValue(new global::Trilean2(lookX, lookY));
+                trav.Property("Grounded").SetValue(grounded);
+                trav.Property("Locked").SetValue(locked);
+
+                if (ModConfig.EnableAnimationSync.Value)
+                {
+                    var ctrl = motor.player;
+                    var wm = ctrl.weaponManager;
+                    bool shooting = (flags & CoopState.FlagShooting) != 0;
+                    if (wm != null && wm.IsShooting != shooting) wm.IsShooting = shooting;
+
+                    ForceInvulnerable(ctrl.damageReceiver, (flags & CoopState.FlagInvulnerable) != 0);
+                    SynthesizeEdges(isP1, grounded, ctrl.animationController, ctrl);
+                }
             }
             catch
             {
@@ -102,8 +103,7 @@ namespace CupheadCoop.Coop
             if (__instance == null || __instance.player == null) return true;
             if (!ModConfig.EnableRemoteMotorBypass.Value) return true;
 
-            var id = __instance.player.id;
-            ApplyArcadeMotorState(__instance, id);
+            ApplyArcadeMotorState(__instance, __instance.player.id);
             return false;
         }
 
@@ -111,35 +111,118 @@ namespace CupheadCoop.Coop
         {
             try
             {
-                bool present;
-                sbyte facing;
-                if (id == global::PlayerId.PlayerOne)
-                {
-                    present = CoopState.RemoteP1Present;
-                    facing = CoopState.RemoteP1Facing;
-                }
-                else
-                {
-                    present = CoopState.RemoteP2Present;
-                    facing = CoopState.RemoteP2Facing;
-                }
+                bool isP1 = id == global::PlayerId.PlayerOne;
+                bool present = isP1 ? CoopState.RemoteP1Present : CoopState.RemoteP2Present;
                 if (!present) return;
+                byte flags = isP1 ? CoopState.RemoteP1Flags : CoopState.RemoteP2Flags;
 
-                // Position is written by ScenePuppetry.ClientApply (interpolated, +32000 LateUpdate)
-                // — deliberately not touched here.
+                bool grounded = (flags & CoopState.FlagGrounded) != 0;
+                bool locked = (flags & CoopState.FlagLocked) != 0;
+                bool superEx = (flags & CoopState.FlagSuperEx) != 0;
 
-                int lookX = facing;
+                int lookX, lookY;
+                DeriveLook(isP1, grounded, locked, superEx, out lookX, out lookY);
+
                 var trav = Traverse.Create(motor);
-                // ArcadePlayerMotor has the same property names — confirmed from Cuphead decompile.
-                trav.Property("LookDirection").SetValue(new global::Trilean2(lookX, 0));
-                trav.Property("TrueLookDirection").SetValue(new global::Trilean2(lookX, 0));
-                trav.Property("MoveDirection").SetValue(new global::Trilean2(lookX, 0));
-                trav.Property("Grounded").SetValue(true);
+                int trueX = lookX != 0 ? lookX : motor.TrueLookDirection.x;
+                trav.Property("LookDirection").SetValue(new global::Trilean2(lookX, lookY));
+                trav.Property("TrueLookDirection").SetValue(new global::Trilean2(trueX, lookY));
+                trav.Property("MoveDirection").SetValue(new global::Trilean2(lookX, lookY));
+                trav.Property("Grounded").SetValue(grounded);
+                trav.Property("Locked").SetValue(locked);
+
+                if (ModConfig.EnableAnimationSync.Value)
+                {
+                    var ctrl = motor.player;
+                    var wm = ctrl.weaponManager;
+                    bool shooting = (flags & CoopState.FlagShooting) != 0;
+                    if (wm != null && wm.IsShooting != shooting) wm.IsShooting = shooting;
+
+                    ForceInvulnerable(ctrl.damageReceiver, (flags & CoopState.FlagInvulnerable) != 0);
+                    SynthesizeArcadeEdges(isP1, grounded, ctrl.animationController, ctrl);
+                }
             }
             catch
             {
                 // Same swallowing rationale — scene transition raciness.
             }
+        }
+
+        // Digitize the mirrored analog axes into the same -1/0/+1 Trilean the motor's HandleLooking
+        // would produce, using GetAxisInt's exact thresholds (magnitude 0.375; direction cos 0.38268
+        // for X, 0.5 crampedDiagonal for Y; duck override -0.705). Reading the mirror directly (rather
+        // than routing through Rewired/GetAxisInt) keeps this independent of the client window's OS
+        // focus, which the input focus-gate would otherwise zero. Allocation-free (Vector2 is a struct).
+        private static void DeriveLook(bool isP1, bool grounded, bool locked, bool superEx,
+                                       out int lookX, out int lookY)
+        {
+            float ax = isP1 ? CoopState.MirroredP1AxisX : CoopState.MirroredP2AxisX;
+            float ay = isP1 ? CoopState.MirroredP1AxisY : CoopState.MirroredP2AxisY;
+            var v = new Vector2(ax, ay);
+            bool duckMod = grounded && !locked && !superEx;
+            lookX = AxisToInt(v, false, false, false);
+            lookY = AxisToInt(v, true, true, duckMod);
+        }
+
+        // Mirrors PlayerInput.GetAxisInt's core (post-camera-rotate branch, which is off in-level).
+        private static int AxisToInt(Vector2 v, bool wantY, bool crampedDiagonal, bool duckMod)
+        {
+            float magnitude = v.magnitude;
+            if (magnitude < 0.375f) return 0;
+            float threshold = crampedDiagonal ? 0.5f : 0.38268f;
+            float component = (wantY ? v.y : v.x) / magnitude;
+            if (component > threshold) return 1;
+            if (component < (duckMod ? -0.705f : -threshold)) return -1;
+            return 0;
+        }
+
+        // Force damageReceiver.state to Invulnerable during the streamed i-frame window so the
+        // controller's flash_cr coroutine (Flashing => state == Invulnerable) blinks the cup, and
+        // back to Vulnerable when the window clears. Never stomps a non-Vulnerable/Invulnerable
+        // state (e.g. death), so we don't interfere with states this wave doesn't own.
+        private static void ForceInvulnerable(global::PlayerDamageReceiver dr, bool invuln)
+        {
+            if (dr == null) return;
+            var st = dr.state;
+            if (invuln && st != global::PlayerDamageReceiver.State.Invulnerable)
+                Traverse.Create(dr).Property("state").SetValue(global::PlayerDamageReceiver.State.Invulnerable);
+            else if (!invuln && st == global::PlayerDamageReceiver.State.Invulnerable)
+                Traverse.Create(dr).Property("state").SetValue(global::PlayerDamageReceiver.State.Vulnerable);
+        }
+
+        private static void SynthesizeEdges(bool isP1, bool grounded,
+                                            global::LevelPlayerAnimationController animCtrl,
+                                            global::LevelPlayerController ctrl)
+        {
+            if (animCtrl == null) return;
+            if (ConsumePulse(isP1, CoopState.PulseWeaponFired))
+                animCtrl.OnShotFired();
+            if (ConsumePulse(isP1, CoopState.PulseDamageTaken))
+            {
+                var anim = ctrl.GetComponentInChildren<Animator>();
+                if (anim != null) anim.Play(grounded ? "Hit.Hit_Ground" : "Hit.Hit_Air", 0);
+                Traverse.Create(animCtrl).Field("hitAnimation").SetValue(true);
+            }
+        }
+
+        private static void SynthesizeArcadeEdges(bool isP1, bool grounded,
+                                                  global::ArcadePlayerAnimationController animCtrl,
+                                                  global::ArcadePlayerController ctrl)
+        {
+            if (animCtrl == null) return;
+            if (ConsumePulse(isP1, CoopState.PulseWeaponFired))
+                animCtrl.OnShotFired();
+            if (ConsumePulse(isP1, CoopState.PulseDamageTaken))
+            {
+                var anim = ctrl.GetComponentInChildren<Animator>();
+                if (anim != null) anim.Play(grounded ? "Hit.Hit_Ground" : "Hit.Hit_Air", 0);
+                Traverse.Create(animCtrl).Field("hitAnimation").SetValue(true);
+            }
+        }
+
+        private static bool ConsumePulse(bool isP1, byte bit)
+        {
+            return isP1 ? CoopState.ConsumeP1Pulse(bit) : CoopState.ConsumeP2Pulse(bit);
         }
     }
 }

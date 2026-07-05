@@ -13,6 +13,25 @@ namespace CupheadCoop.Coop
     {
         public static CoopMode Mode = CoopMode.Off;
 
+        // v13 PlayerSnapshot.Flags bit layout. Shared by host capture (ScenePuppetry/HostCaptureHooks)
+        // and client consume (PlayerMotorBypass) so the two ends can never disagree on a bit.
+        public const byte FlagGrounded = 1 << 0;
+        public const byte FlagLocked = 1 << 1;
+        public const byte FlagDashing = 1 << 2;
+        public const byte FlagShooting = 1 << 3;
+        public const byte FlagSuperEx = 1 << 4;
+        public const byte FlagInvulnerable = 1 << 5;
+        public const byte FlagDashDirPos = 1 << 6; // 1 = DashDirection >= 0
+
+        // v13 PlayerSnapshot.Pulses bit layout (host sets on the edge, client consumes once).
+        public const byte PulseWeaponFired = 1 << 0;
+        public const byte PulseDamageTaken = 1 << 1;
+
+        // v13 StateSnapshot.LevelFlags bit layout.
+        public const byte LevelFlagWon = 1 << 0;    // latch while host win sequence runs
+        public const byte LevelFlagReload = 1 << 1; // pulse on SceneLoader.ReloadLevel()
+        public const byte LevelFlagLost = 1 << 2;   // latch while host game-over (lose) flow runs
+
         // Resolved by Harmony patch on PlayerInput.Init the moment Cuphead binds Rewired.Player
         // to a PlayerId. -1 means "not yet captured" — patches no-op until known.
         public static int RewiredPlayer1Id = -1;
@@ -72,6 +91,18 @@ namespace CupheadCoop.Coop
         public static sbyte RemoteP2Hp;
         public static bool RemoteP2IsDead;
 
+        // v13 per-player motor/weapon state (newest snapshot wins — not interpolated). Read each
+        // frame by PlayerMotorBypass to drive the game's own animation controller on the client.
+        public static byte RemoteP1Flags;
+        public static byte RemoteP2Flags;
+        // v13 per-player edge pulses. Sticky-ORed across every received snapshot (so a pulse in a
+        // snapshot the interpolation window skips over is not lost) and consumed exactly once by
+        // the client's edge synthesis via the Consume* accessors below.
+        public static byte RemoteP1Pulses;
+        public static byte RemoteP2Pulses;
+        // v13 level-lifecycle bits. LevelWon is a latch (newest); LevelReload is a sticky pulse.
+        public static byte RemoteLevelFlags;
+
         // M6 entity sync. Fixed-size buffer to avoid GC churn; RemoteEntityCount tracks valid slots.
         public static readonly EntitySnapshot[] RemoteEntities = new EntitySnapshot[EntitySync.MaxSyncedEntities];
         public static int RemoteEntityCount;
@@ -113,6 +144,12 @@ namespace CupheadCoop.Coop
 
         // Host's active scene name. Client's SceneSync.ApplyFromHost converges to this.
         public static string RemoteSceneName = "";
+
+        // v13 wave 2 audio: set true only while AudioSync is replaying a host-streamed SFX through
+        // the real AudioManager, so the client-side suppression prefix lets that one call through
+        // instead of eating it. Every other AudioManager.Play/Stop on the client is a local gameplay
+        // SFX and stays suppressed while a host stream is active in a synced level scene.
+        public static bool ReplayingFromHost;
 
         public static bool IsButtonHeld(int actionId)
         {
@@ -221,6 +258,41 @@ namespace CupheadCoop.Coop
             return (MirroredP2Buttons & bit) == 0u && (PreviousMirroredP2Buttons & bit) != 0u;
         }
 
+        // ---- v13 pulse accessors (client side). Flags need no accessor — consumers test the
+        // RemoteP*Flags byte directly against the Flag* constants. ----
+
+        /// <summary>Return whether the given pulse bit is pending for a player, clearing it so the
+        /// edge fires exactly once. Called from the client's edge synthesis each frame.</summary>
+        public static bool ConsumeP1Pulse(byte bit)
+        {
+            bool v = (RemoteP1Pulses & bit) != 0;
+            RemoteP1Pulses &= (byte)~bit;
+            return v;
+        }
+        public static bool ConsumeP2Pulse(byte bit)
+        {
+            bool v = (RemoteP2Pulses & bit) != 0;
+            RemoteP2Pulses &= (byte)~bit;
+            return v;
+        }
+
+        /// <summary>Latched host win state — read (not consumed) by the client's win-cosmetic path (wave 2).</summary>
+        public static bool RemoteLevelWon => (RemoteLevelFlags & LevelFlagWon) != 0;
+
+        /// <summary>Latched host game-over state. Authoritative both-dead signal: the per-player
+        /// IsDead stream is racy (Cuphead removes a dead player's controller the same frame IsDead
+        /// flips, so a 30 Hz snapshot usually never carries it) — the host latches its own
+        /// LevelEnd.Lose instead.</summary>
+        public static bool RemoteLevelLost => (RemoteLevelFlags & LevelFlagLost) != 0;
+
+        /// <summary>Consume the one-shot LevelReload pulse (wave 2 calls SceneLoader.ReloadLevel).</summary>
+        public static bool ConsumeLevelReload()
+        {
+            bool v = (RemoteLevelFlags & LevelFlagReload) != 0;
+            RemoteLevelFlags &= unchecked((byte)~LevelFlagReload);
+            return v;
+        }
+
         public static void ApplyRemoteFrame(uint sequence, uint buttons, float axisX, float axisY)
         {
             if (sequence != 0 && sequence <= LastAppliedSequence) return;
@@ -268,9 +340,15 @@ namespace CupheadCoop.Coop
             RemoteP2AnimTime = 0f;
             RemoteP2Hp = -1;
             RemoteP2IsDead = false;
+            RemoteP1Flags = 0;
+            RemoteP2Flags = 0;
+            RemoteP1Pulses = 0;
+            RemoteP2Pulses = 0;
+            RemoteLevelFlags = 0;
             RemoteEntityCount = 0;
             RemoteIsPaused = false;
             RemoteSceneName = "";
+            ReplayingFromHost = false;
             RemoteProjectileCount = 0;
             MirroredP1Buttons = 0;
             PreviousMirroredP1Buttons = 0;
@@ -288,11 +366,19 @@ namespace CupheadCoop.Coop
             // v1.1.0: clear the interpolation ring + restore any death-hidden renderers.
             SnapshotInterpolation.Reset();
             PlayerDeathSync.Reset();
+            // v1.2.0 wave 2: clear the audio capture/replay rings + loop tracking, and the level-event
+            // one-shots, so a fresh session doesn't inherit stale SFX or a latched game-over/win.
+            AudioSync.Reset();
+            LevelEventSync.Reset();
             // v0.9.0: re-enable any AbstractLevelEntity AI components we disabled while in
             // client mode + drop the prefab template registry. Otherwise after F11 the user's
             // single-player session has dead bosses (AI disabled).
             EntitySync.RestoreClientDisabled();
             TypeRegistry.ClearClient();
+            // v13: clear host-side edge accumulators + win/reload latch so a new session starts clean.
+            HostPlayerPulses.Reset();
+            HostLevelFlags.Reset();
+            HostLoseWatchdog.Reset();
         }
 
         /// <summary>
@@ -301,10 +387,23 @@ namespace CupheadCoop.Coop
         public static void ApplyRemoteState(uint sequence,
                                             PlayerSnapshot p1, PlayerSnapshot p2,
                                             bool isPaused, string sceneName,
-                                            EntitySnapshot[] entities, int entityCount)
+                                            EntitySnapshot[] entities, int entityCount,
+                                            byte levelFlags)
         {
             if (sequence != 0 && sequence <= RemoteStateSequence) return;
             RemoteStateSequence = sequence;
+
+            // v13: flags take newest (no interpolation); pulses sticky-OR so an edge in a snapshot
+            // the interpolation window skips over still reaches the client. This is the receive
+            // path (one call per in-order snapshot), so each snapshot's pulses OR in exactly once.
+            RemoteP1Flags = p1.Flags;
+            RemoteP2Flags = p2.Flags;
+            RemoteP1Pulses |= p1.Pulses;
+            RemoteP2Pulses |= p2.Pulses;
+            // LevelWon/LevelLost = newest latch; LevelReload = sticky pulse ORed across snapshots.
+            RemoteLevelFlags = (byte)((levelFlags & (LevelFlagWon | LevelFlagLost))
+                                      | ((RemoteLevelFlags | levelFlags) & LevelFlagReload));
+
             RemoteP1Present = p1.Present;
             RemoteP1X = p1.X;
             RemoteP1Y = p1.Y;

@@ -149,19 +149,34 @@ animations not synced, deaths, etc." Root causes found by code audit; none archi
       impossible from automation; visual runs need the user to start run-visual-test.ps1.
 - [ ] Real two-PC re-test (Windows host + Mac client, both on v1.1.0)
 
-### v1.2.0 — full-fidelity client rendering (in progress; "implement EVERYTHING, then test")
+### v1.2.0 — full-fidelity client rendering (verified 16/16, releasing)
 User verdict on v1.1.0: client cups slide without walk-left/shoot/damage animations, both-dead
 shows nothing, lives HUD missing. Directive: batch ALL known gaps, verify autonomously, then one
 human test.
 
-- [ ] Investigate (3 parallel decompile agents): player-anim pipeline, death/game-over/HUD flow, audio cues
-- [ ] Player animations: full fidelity on client (walk both dirs, aim/shoot, hit react) — architecture per investigation
-- [ ] Game-over + win mirroring (both dead -> retry card on client; KNOCKOUT/results on win)
-- [ ] Lives/HP HUD on client
-- [ ] Ghost/parry-revive visuals on client
-- [ ] Audio cues on client (scope per investigation)
-- [ ] Harness-verified: anim-state parity assertions, game-over log check, HUD presence check
+- [x] Investigate (3 parallel decompile agents): player-anim pipeline, death/game-over/HUD flow, audio cues
+- [x] Player animations: full fidelity on client (walk both dirs, aim/shoot, hit react) — local-driven controllers fed by forced motor state + streamed flags/pulses (protocol v13)
+- [x] Game-over + win mirroring (both dead -> retry card on client; KNOCKOUT/results on win)
+  - host: LevelEnd.Win/Lose postfix latches; HostLoseWatchdog invokes Level._OnLose() one-shot when the stock 4-frame lose gate deadlocks (ghost-revive cycling), wrapping level-end/lose events so a half-torn-down subscriber can't abort the flow
+  - client: authoritative LevelFlagLost consumer (force local deaths + trigger stock game-over) + ClientSaveGuard blocks SaveCurrentFile on the client
+- [x] Lives/HP HUD on client — real SetHealth() events + force-join both slots + HudFixup re-init
+- [x] Ghost/parry-revive visuals on client — cosmetic PlayerDeathEffect on death edges
+- [x] Audio cues on client — host streams AudioManager Play/PlayLoop/Stop keys; client suppresses local gameplay SFX and replays the host stream
+- [x] Harness-verified: tools/run-verification.sh — 16/16 PASS (handshake v13, 30Hz, anim parity incl. shoot layer, death + ghost, game-over mirror, save guard, SFX tx/rx, zero exceptions, saves untouched)
 - [ ] v1.2.0 bundles + release, then the ONE human test
+
+v1.2.0 debugging notes (for future archaeology):
+- Game-over mirror was TWO stacked bugs: (1) host deadlock — the death pause disables the Level
+  component and can freeze playerDeathDelayFrames past its window, so re-arming playerIsDead
+  can never fire the stock gate; direct _OnLose() invoke is the fix; (2) client receive mask in
+  CoopState.ApplyRemoteState only kept Won|Reload bits and silently dropped Lost.
+- _OnLose minutes after death hits KeyNotFoundException in a dead player's
+  LevelPlayerWeaponManager.OnLevelEnd (weapon dict torn down) — a state the stock 4-frame path
+  never sees; per-subscriber try/catch wrapping of the level-end/lose events isolates it.
+
+Known deliberate v1.2.0 limitations (release notes): Chalice/EX/super/parry animation long tail;
+Dashing/IsUsingSuperOrEx not forceable client-side (no setters); dynamic BGM phase changes not
+forwarded; win-screen scoreboard shows client's stale PlayerData.
 
 ### Pause sync (shipped as v0.6.0, unverified)
 Host sample → snapshot → client `PauseManager.Pause/Unpause` apply. Local pause input on client is suppressed via Harmony prefix gated on `PauseSync.RemoteDriven`.

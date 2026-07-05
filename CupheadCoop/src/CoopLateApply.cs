@@ -23,6 +23,10 @@ namespace CupheadCoop
         {
             float dt = Time.unscaledDeltaTime;
             ProjectileSync.Tick(dt);
+            // v1.2.0 wave 2: refresh the audio scene gate (both modes) and, on the client, replay
+            // this frame's host-streamed SFX. Runs before the mode branches so the cached scene gate
+            // is fresh for any AudioManager patch that fires later this frame.
+            AudioSync.Tick();
 
             if (CoopState.Mode == CoopMode.Host)
             {
@@ -30,6 +34,10 @@ namespace CupheadCoop
                 ScenePuppetry.HostCapture();
                 PauseSync.HostCapture();
                 SceneSync.HostCapture();
+                // Re-arm the stock lose gate if the game deadlocked past its own 4-frame both-dead
+                // window (ghost-revive cycling) — must run after HostCapture/SceneSync so it reads
+                // this frame's scene name, before the snapshot send so the Lost latch ships promptly.
+                HostLoseWatchdog.Tick(dt);
                 Owner?.HostInstance?.TickStateSnapshot(dt);
             }
             else if (CoopState.Mode == CoopMode.Client)
@@ -44,6 +52,10 @@ namespace CupheadCoop
                 EntitySync.Tick(dt);
                 ScenePuppetry.ClientApply();
                 PlayerDeathSync.Tick();
+                // v1.2.0 wave 2: drive the stock game-over/win/reload UI from the host stream.
+                LevelEventSync.Tick();
+                // v1.2.0: rebuild the level HUD if its one-shot init raced the force-join.
+                HudFixup.Tick();
 
                 if (ModConfig.EnableEntitySync.Value)
                 {

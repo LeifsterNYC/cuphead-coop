@@ -63,3 +63,22 @@ list, shipped anyway. His correction: "implement EVERYTHING WELL then i will tes
 EMPTY, autonomously verify each (harness + logs + decompile-informed assertions), and
 only then request a human test. Never ship a build whose failure modes I can already
 name.**
+
+## New wire bit ⇒ grep every mask that touches the field (2026-07-05, v1.2.0)
+Added LevelFlagLost to StateSnapshot.LevelFlags, latched it host-side, consumed it
+client-side — and it never arrived: CoopState.ApplyRemoteState re-masked the incoming
+byte with the OLD bit set (`Won | Reload`), silently dropping Lost on receipt. Cost a
+full verification cycle to find because both endpoints looked correct in isolation.
+**Rule: when adding a flag/pulse bit to an existing wire field, grep for every mask,
+OR, and clear on that field (host build, receive apply, interpolation, reset) and
+update each — the receive path is the one that silently eats new bits.**
+
+## Invoking a stock flow late? Isolate its event subscribers (2026-07-05, v1.2.0)
+Level._OnLose() invoked minutes after the deaths (deadlock recovery) exploded in a
+dead player's LevelPlayerWeaponManager.OnLevelEnd — torn-down state the stock 4-frame
+path never sees. One throwing subscriber aborts the whole multicast chain, so
+LevelEnd.Lose never ran. Rewrapping the event backing fields to invoke each subscriber
+in its own try/catch preserved the stock flow end-to-end.
+**Rule: when re-driving a game's own lifecycle method outside its designed timing
+window, assume its event subscribers are stale — per-subscriber exception isolation,
+not a blanket catch around the whole call (the blanket catch aborts the rest of the flow).**

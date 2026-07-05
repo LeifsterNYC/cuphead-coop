@@ -46,7 +46,17 @@ namespace CupheadCoop.Coop
             if (!ModConfig.EnableAutoP2Join.Value) { _pending = false; return; }
             _pending = false;
 
-            if (!ForceJoin(1, global::PlayerId.PlayerTwo)) _pending = true; // retry next tick
+            bool ok = true;
+            // v1.2.0 HUD race fix: on the CLIENT, force-join P1 as well. The client user may still
+            // be sitting on the title screen when the session establishes; if neither slot is Joined
+            // when SceneSync drags them into the host's level, Level.Start → LevelHUD.LevelInit runs
+            // with no players and dies, leaving the HUD permanently absent. Joining both slots here
+            // — at session establish, before any level load — makes LevelInit see the same world it
+            // would in real local co-op. Host path unchanged: its P1 is the human who started the game.
+            if (CoopState.Mode == CoopMode.Client)
+                ok &= ForceJoin(0, global::PlayerId.PlayerOne);
+            ok &= ForceJoin(1, global::PlayerId.PlayerTwo);
+            if (!ok) _pending = true; // retry next tick
         }
 
         /// <summary>
@@ -152,6 +162,70 @@ namespace CupheadCoop.Coop
             {
                 // A subscriber threw — log but continue, since some subscribers may have already run.
                 Log?.LogWarning("P2AutoJoin: OnPlayerJoinedEvent subscriber threw: " + ex.GetType().Name);
+            }
+        }
+    }
+
+    /// <summary>
+    /// v1.2.0 HUD fallback, the second half of the join-ordering fix above. If a level scene
+    /// managed to load before the force-join landed, Level.Start's one call to
+    /// <c>LevelHUD.LevelInit()</c> ran against an empty PlayerManager and died, and nothing in the
+    /// game ever retries it — the HUD stays blank for the whole fight. Detection: LevelInit assigns
+    /// the private, non-serialized <c>levelHudTemplate</c> as its very first act, so
+    /// "<c>LevelHUD.Current</c> exists but its template is null" is a reliable init-never-completed
+    /// probe. Once both player controllers exist, we invoke the (public) LevelInit ourselves — one
+    /// shot per LevelHUD instance so a genuine mid-init state is never double-driven.
+    /// </summary>
+    internal static class HudFixup
+    {
+        public static ManualLogSource Log;
+
+        private static int _handledHudId;
+        private static FieldInfo _templateField;
+
+        public static void Tick()
+        {
+            if (CoopState.Mode != CoopMode.Client) return;
+            try
+            {
+                var hud = global::LevelHUD.Current;
+                if (hud == null) return;
+                int hudId = hud.GetInstanceID();
+                if (hudId == _handledHudId) return;
+
+                if (_templateField == null)
+                {
+                    _templateField = typeof(global::LevelHUD).GetField("levelHudTemplate",
+                        BindingFlags.NonPublic | BindingFlags.Instance);
+                    if (_templateField == null)
+                    {
+                        Log?.LogWarning("HudFixup: LevelHUD.levelHudTemplate field not found — fallback disabled");
+                        _handledHudId = hudId;
+                        return;
+                    }
+                }
+
+                if (_templateField.GetValue(hud) != null)
+                {
+                    // LevelInit already ran (the normal case) — nothing to fix for this HUD.
+                    _handledHudId = hudId;
+                    return;
+                }
+
+                // Template null: init never completed. Wait until both controllers exist so the
+                // re-invoke can't hit the same NRE that killed the original call.
+                if (!global::PlayerManager.DoesPlayerExist(global::PlayerId.PlayerOne)) return;
+                if (!global::PlayerManager.DoesPlayerExist(global::PlayerId.PlayerTwo)) return;
+                if (global::PlayerManager.GetPlayer(global::PlayerId.PlayerOne) == null) return;
+                if (global::PlayerManager.GetPlayer(global::PlayerId.PlayerTwo) == null) return;
+
+                _handledHudId = hudId; // one shot, even if LevelInit throws below
+                hud.LevelInit();
+                Log?.LogInfo("HudFixup: re-invoked LevelHUD.LevelInit (initial call raced the force-join)");
+            }
+            catch
+            {
+                // Scene-transition raciness — retry next frame (or never, if _handledHudId latched).
             }
         }
     }

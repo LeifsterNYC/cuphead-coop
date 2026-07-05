@@ -36,6 +36,11 @@ namespace CupheadCoop.Coop
         public static sbyte LocalP2Hp;
         public static bool LocalP2IsDead;
 
+        // v13: per-player motor/weapon flags (bit layout = CoopState.Flag*). Sampled every frame in
+        // HostCapture; CoopHost.TickStateSnapshot ships the newest into PlayerSnapshot.Flags.
+        public static byte LocalP1Flags;
+        public static byte LocalP2Flags;
+
         // v10: per-player Rewired input snapshot, sampled by HostCapture and shipped in
         // PlayerSnapshot so client's local sim can read what host was reading. P1 = host's
         // local controller/keyboard. P2 = the network input forwarded from client (which
@@ -64,7 +69,7 @@ namespace CupheadCoop.Coop
             CaptureInputs();
             string p1Why;
             var p1 = SafeGetPlayerSnapshot(global::PlayerId.PlayerOne, out var f1, out var ah1, out var at1,
-                                           out var hp1, out var d1, out p1Why);
+                                           out var hp1, out var d1, out var fl1, out p1Why);
             if (p1.HasValue)
             {
                 LocalP1Present = true;
@@ -75,15 +80,17 @@ namespace CupheadCoop.Coop
                 LocalP1AnimTime = at1;
                 LocalP1Hp = hp1;
                 LocalP1IsDead = d1;
+                LocalP1Flags = fl1;
             }
             else
             {
                 LocalP1Present = false;
+                LocalP1Flags = 0;
             }
 
             string p2Why;
             var p2 = SafeGetPlayerSnapshot(global::PlayerId.PlayerTwo, out var f2, out var ah2, out var at2,
-                                           out var hp2, out var d2, out p2Why);
+                                           out var hp2, out var d2, out var fl2, out p2Why);
             if (p2.HasValue)
             {
                 LocalP2Present = true;
@@ -94,10 +101,12 @@ namespace CupheadCoop.Coop
                 LocalP2AnimTime = at2;
                 LocalP2Hp = hp2;
                 LocalP2IsDead = d2;
+                LocalP2Flags = fl2;
             }
             else
             {
                 LocalP2Present = false;
+                LocalP2Flags = 0;
             }
 
             // Diagnostic: while connected, print why one or both players aren't sampled.
@@ -151,13 +160,14 @@ namespace CupheadCoop.Coop
 
         private static Vector2? SafeGetPlayerSnapshot(global::PlayerId id, out sbyte facing,
                                                       out int animHash, out float animTime,
-                                                      out sbyte hp, out bool isDead, out string why)
+                                                      out sbyte hp, out bool isDead, out byte flags, out string why)
         {
             facing = 0;
             animHash = 0;
             animTime = 0f;
             hp = -1;
             isDead = false;
+            flags = 0;
             why = null;
             try
             {
@@ -187,6 +197,7 @@ namespace CupheadCoop.Coop
                             hp = (sbyte)h;
                         }
                         isDead = ctrl.IsDead;
+                        flags = SampleFlags(ctrl);
                         return new Vector2(pos.x, pos.y);
                     }
                 }
@@ -220,6 +231,66 @@ namespace CupheadCoop.Coop
             }
         }
 
+        /// <summary>
+        /// v13: pack the motor/weapon/damage state the client needs to drive the game's own player
+        /// animation controller. Level and Arcade controllers only — map players (no motor) return 0.
+        /// Bit layout is <see cref="CoopState.Flag"/>* so host and client agree by construction.
+        /// Host-only path (called from HostCapture), so it also doubles as the registration point
+        /// for the per-player DamageTaken pulse subscription — the receiver reference is fresh here
+        /// every frame, so a scene load that recreates it re-hooks automatically.
+        /// </summary>
+        private static byte SampleFlags(global::AbstractPlayerController ctrl)
+        {
+            byte f = 0;
+            try
+            {
+                HostPlayerPulses.EnsureDamageHook(ctrl.id, ctrl.damageReceiver);
+
+                var lvl = ctrl as global::LevelPlayerController;
+                if (lvl != null)
+                {
+                    var m = lvl.motor;
+                    if (m != null)
+                    {
+                        if (m.Grounded) f |= CoopState.FlagGrounded;
+                        if (m.Locked) f |= CoopState.FlagLocked;
+                        if (m.Dashing) f |= CoopState.FlagDashing;
+                        if (m.IsUsingSuperOrEx) f |= CoopState.FlagSuperEx;
+                        if (m.DashDirection >= 0) f |= CoopState.FlagDashDirPos;
+                    }
+                    if (lvl.weaponManager != null && lvl.weaponManager.IsShooting) f |= CoopState.FlagShooting;
+                    if (ctrl.damageReceiver != null
+                        && ctrl.damageReceiver.state == global::PlayerDamageReceiver.State.Invulnerable)
+                        f |= CoopState.FlagInvulnerable;
+                    return f;
+                }
+
+                var arc = ctrl as global::ArcadePlayerController;
+                if (arc != null)
+                {
+                    var m = arc.motor;
+                    if (m != null)
+                    {
+                        if (m.Grounded) f |= CoopState.FlagGrounded;
+                        if (m.Locked) f |= CoopState.FlagLocked;
+                        if (m.Dashing) f |= CoopState.FlagDashing;
+                        if (m.IsUsingSuperOrEx) f |= CoopState.FlagSuperEx;
+                        if (m.DashDirection >= 0) f |= CoopState.FlagDashDirPos;
+                    }
+                    if (arc.weaponManager != null && arc.weaponManager.IsShooting) f |= CoopState.FlagShooting;
+                    if (ctrl.damageReceiver != null
+                        && ctrl.damageReceiver.state == global::PlayerDamageReceiver.State.Invulnerable)
+                        f |= CoopState.FlagInvulnerable;
+                    return f;
+                }
+            }
+            catch
+            {
+                // Mid-transition: a manager may be half-wired. Zero flags is a safe idle.
+            }
+            return f;
+        }
+
         // Cached lookup so we're not enumerating every frame. Refreshed when the cached
         // reference is destroyed (scene transition).
         private static global::MapPlayerController _cachedMapP1;
@@ -244,21 +315,6 @@ namespace CupheadCoop.Coop
             if (id == global::PlayerId.PlayerOne) return _cachedMapP1;
             if (id == global::PlayerId.PlayerTwo) return _cachedMapP2;
             return null;
-        }
-
-        // Cached reflection for the private PlayerStatsManager.Health setter, used to push the
-        // host's authoritative HP onto the client without duplicating Cuphead's UI-update plumbing.
-        private static System.Reflection.MethodInfo _setHealth;
-        private static System.Reflection.MethodInfo SetHealthSetter
-        {
-            get
-            {
-                if (_setHealth == null)
-                {
-                    _setHealth = HarmonyLib.AccessTools.PropertySetter(typeof(global::PlayerStatsManager), "Health");
-                }
-                return _setHealth;
-            }
         }
 
         // v10: sample host-side Rewired inputs once per snapshot tick. Packs into the
@@ -331,33 +387,38 @@ namespace CupheadCoop.Coop
         {
             try
             {
-                Transform t = null;
-                Animator targetAnim = null;
-                global::PlayerStatsManager targetStats = null;
-
+                // v13: for Level/Arcade players the game's own animation controller now runs locally
+                // (see PlayerMotorBypass), so it owns localScale (facing) and the animator entirely.
+                // We only write the interpolated position and push the host's authoritative HP.
                 if (global::PlayerManager.DoesPlayerExist(id))
                 {
                     var ctrl = global::PlayerManager.GetPlayer(id);
                     if (ctrl != null && ctrl.transform != null)
                     {
-                        t = ctrl.transform;
-                        targetAnim = ctrl.GetComponentInChildren<Animator>();
-                        targetStats = ctrl.stats;
+                        var pos = ctrl.transform.position;
+                        pos.x = x;
+                        pos.y = y;
+                        ctrl.transform.position = pos;
+
+                        // Push HP through the public setter so OnHealthChanged fires and the HUD
+                        // updates (the raw backing-field setter skipped that plumbing). The != guard
+                        // avoids re-firing the event when nothing changed.
+                        var targetStats = ctrl.stats;
+                        if (hp >= 0 && targetStats != null && targetStats.Health != hp)
+                            targetStats.SetHealth(hp);
+                        return;
                     }
                 }
 
-                if (t == null)
-                {
-                    // Map case
-                    var mapCtrl = FindMapPlayer(id);
-                    if (mapCtrl == null || mapCtrl.transform == null) return;
-                    t = mapCtrl.transform;
-                    targetAnim = mapCtrl.GetComponentInChildren<Animator>();
-                }
-                var p = t.position;
-                p.x = x;
-                p.y = y;
-                t.position = p;
+                // Map case — no motor bypass and no animation controller takeover on the world map,
+                // so we keep the pre-v13 puppet path: write position + facing + scrub the animator.
+                var mapCtrl = FindMapPlayer(id);
+                if (mapCtrl == null || mapCtrl.transform == null) return;
+                var t = mapCtrl.transform;
+                var mp = t.position;
+                mp.x = x;
+                mp.y = y;
+                t.position = mp;
                 if (facing != 0)
                 {
                     var s = t.localScale;
@@ -367,27 +428,15 @@ namespace CupheadCoop.Coop
                     t.localScale = s;
                 }
 
-                if (animHash != 0 && targetAnim != null && targetAnim.isActiveAndEnabled
-                    && targetAnim.runtimeAnimatorController != null)
+                var mapAnim = mapCtrl.GetComponentInChildren<Animator>();
+                if (animHash != 0 && mapAnim != null && mapAnim.isActiveAndEnabled
+                    && mapAnim.runtimeAnimatorController != null)
                 {
-                    // Register ALL animators in this player's hierarchy with the parameter-block
-                    // patches. Cuphead's player has multiple animators (body, weapon, fx) that
-                    // share parameters; if only the body's params are locked, the weapon's
-                    // animator can still drift and visually desync. Cheap to do — small set.
                     var allAnims = t.GetComponentsInChildren<Animator>();
                     for (int i = 0; i < allAnims.Length; i++)
                         AnimatorParamPatches.RegisterSuppressed(allAnims[i]);
 
-                    AnimUtil.Scrub(targetAnim, animHash, animTime);
-                }
-
-                // Push HP through the property setter so its OnHealthChanged event fires and the
-                // HUD updates. Map case: targetStats is null so we skip naturally.
-                if (hp >= 0 && targetStats != null)
-                {
-                    var setter = SetHealthSetter;
-                    if (setter != null && targetStats.Health != hp)
-                        setter.Invoke(targetStats, new object[] { (int)hp });
+                    AnimUtil.Scrub(mapAnim, animHash, animTime);
                 }
             }
             catch

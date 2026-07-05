@@ -24,6 +24,7 @@ namespace CupheadCoop
 
         public static ConfigEntry<bool> DebugForceP2WalkRight;
         public static ConfigEntry<bool> Verbose;
+        public static ConfigEntry<bool> DumpAnimState;
 
         // Automated-test harness. All default OFF — see TestHarness.cs. These are for driving two
         // instances from a script; they have no place in normal play.
@@ -48,6 +49,8 @@ namespace CupheadCoop
         public static ConfigEntry<bool> EnableSpawnFromHost;
         public static ConfigEntry<bool> EnableRemoteMotorBypass;
         public static ConfigEntry<bool> EnableDeathSync;
+        public static ConfigEntry<bool> EnableLevelEvents;
+        public static ConfigEntry<bool> EnableAudioSync;
 
         public static void Bind(ConfigFile cfg)
         {
@@ -91,6 +94,10 @@ namespace CupheadCoop
                 "If true, with no active session, forces Player 2's MoveHorizontal axis to +1.0. Used to verify the input intercept works without networking.");
             Verbose = cfg.Bind("Debug", "Verbose", false,
                 "Log per-frame input traffic. Noisy.");
+            DumpAnimState = cfg.Bind("Debug", "DumpAnimState", false,
+                "v1.2.0 verification: once per second, both host and client log each player's animator " +
+                "layer 0/1/2 state hash + normalized time, layer weights, localScale.x sign and the exchanged " +
+                "flags byte in an identical format, so the two logs diff cleanly. Off for normal play.");
 
             BlockSaves = cfg.Bind("Debug", "BlockSaves", false,
                 "AUTOMATED TESTING ONLY. Blocks every .sav disk write (OnlineInterfaceSteam.SaveCloudData, the sole " +
@@ -133,7 +140,11 @@ namespace CupheadCoop
             EnableRemoteMotorBypass = cfg.Bind("Sync", "EnableRemoteMotorBypass", true,
                 "v0.9.1 architectural pivot inspired by Germanized/CupHeads' PlayerMotorPatch: on client, prefix-skip LevelPlayerMotor.FixedUpdate and ArcadePlayerMotor.FixedUpdate for both player slots. Their position is written by ScenePuppetry from the interpolated host stream + Traverse-set motor properties (LookDirection, MoveDirection, Grounded). Eliminates the parallel-sim divergence that input-mirroring couldn't fully fix. Disable if both cups go visually static or jitter weirdly.");
             EnableDeathSync = cfg.Bind("Sync", "EnableDeathSync", true,
-                "v1.1.0 M8.5 minimal death mirroring: on client, hide a cup's sprite renderers while the host reports that player dead (or absent while the other player is still present). Prevents a frozen, alive-looking cup being left standing when a player dies on the host. Ghost/parry-revive visuals are not mirrored yet. Disable if players go invisible when they shouldn't.");
+                "v1.1.0 M8.5 minimal death mirroring: on client, hide a cup's sprite renderers while the host reports that player dead (or absent while the other player is still present). Prevents a frozen, alive-looking cup being left standing when a player dies on the host. v1.2.0 also spawns the game's own floating death ghost for the downed cup, destroyed on revive/scene change. Disable if players go invisible when they shouldn't.");
+            EnableLevelEvents = cfg.Bind("Sync", "EnableLevelEvents", true,
+                "v1.2.0 wave 2: on client, mirror host-authoritative level lifecycle from the stream — both-players-dead shows the stock game-over retry card (Level.playerIsDead), a host Retry reloads the client's level (SceneLoader.ReloadLevel), and a host win plays the cosmetic LevelKOAnimation. The client NEVER takes any save-writing path (PlayerData.SaveCurrentFile is blocked in client mode). Disable to bisect if the game-over/win card or reload misbehaves.");
+            EnableAudioSync = cfg.Bind("Sync", "EnableAudioSync", true,
+                "v1.2.0 wave 2: host streams gameplay SFX (AudioManager.Play/PlayLoop/Stop keys) to the client, which suppresses its own local gameplay SFX and replays the host's inside synced level scenes (scene_level*). Fixes the near-silent client fight (boss/enemy SFX come from AI coroutines that are dead on the client). BGM + menu/map SFX are untouched. When off, the host stops capturing AND the client stops suppressing — both play their own SFX locally.");
         }
     }
 }

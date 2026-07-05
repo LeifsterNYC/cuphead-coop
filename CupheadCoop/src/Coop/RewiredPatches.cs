@@ -140,6 +140,10 @@ namespace CupheadCoop.Coop
             harmony.PatchAll(typeof(PlayerAnimControllerUpdateBlock));
             harmony.PatchAll(typeof(ProjectileLifecyclePatches));
             harmony.PatchAll(typeof(PlayerMotorBypass));
+            harmony.PatchAll(typeof(HostCaptureHooks));
+            // v1.2.0 wave 2: host SFX capture + client SFX suppression, and the client save-write guard.
+            harmony.PatchAll(typeof(AudioSyncPatches));
+            harmony.PatchAll(typeof(ClientSaveGuard));
         }
 
         private static bool ShouldOverride(Player __instance)

@@ -93,7 +93,9 @@ namespace CupheadCoop.Net
                     IsDead = ScenePuppetry.LocalP1IsDead,
                     Buttons = ScenePuppetry.LocalP1Buttons,
                     AxisX_q = ScenePuppetry.LocalP1AxisX_q,
-                    AxisY_q = ScenePuppetry.LocalP1AxisY_q
+                    AxisY_q = ScenePuppetry.LocalP1AxisY_q,
+                    Flags = ScenePuppetry.LocalP1Flags,
+                    Pulses = HostPlayerPulses.ConsumeP1()
                 },
                 P2 = new PlayerSnapshot
                 {
@@ -107,7 +109,9 @@ namespace CupheadCoop.Net
                     IsDead = ScenePuppetry.LocalP2IsDead,
                     Buttons = ScenePuppetry.LocalP2Buttons,
                     AxisX_q = ScenePuppetry.LocalP2AxisX_q,
-                    AxisY_q = ScenePuppetry.LocalP2AxisY_q
+                    AxisY_q = ScenePuppetry.LocalP2AxisY_q,
+                    Flags = ScenePuppetry.LocalP2Flags,
+                    Pulses = HostPlayerPulses.ConsumeP2()
                 },
                 IsPaused = PauseSync.LocalIsPaused,
                 SceneName = SceneSync.LocalSceneName,
@@ -116,7 +120,11 @@ namespace CupheadCoop.Net
                 AliveHashCount = (ushort)EntitySync.AliveHashesCount,
                 AliveHashes = EntitySync.AliveHashesBuffer,
                 ProjectileCount = (byte)projectileCount,
-                Projectiles = ProjectileSync.HostBuffer
+                Projectiles = ProjectileSync.HostBuffer,
+                LevelFlags = HostLevelFlags.BuildAndClear(),
+                SfxCount = (byte)AudioSync.DrainForSnapshot(),
+                SfxKinds = AudioSync.HostSfxKinds,
+                SfxKeys = AudioSync.HostSfxKeys
             };
 
             var w = new NetDataWriter();

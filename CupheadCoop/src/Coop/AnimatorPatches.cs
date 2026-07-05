@@ -91,36 +91,23 @@ namespace CupheadCoop.Coop
     }
 
     /// <summary>
-    /// v0.8.2 — block Cuphead's player-animation-controller Update methods on client.
+    /// v0.8.2 — block Cuphead's <see cref="MapPlayerAnimationController"/> Update on the client.
     ///
-    /// Why: <see cref="ArcadePlayerAnimationController"/> and
-    /// <see cref="LevelPlayerAnimationController"/> both call <c>animator.Update(deltaTime)</c>
-    /// FOUR TIMES per frame from inside their own Update methods, in addition to Unity's
-    /// automatic animator update. Each manual Update advances time-based transitions in the
-    /// state machine. So even with our parameter-setter block in place, the animator
-    /// state machine progresses on time, transitions to "exit" states, and a moment later our
-    /// LateUpdate forces it back to host's state. Visible as a 2-frame flicker: client cup
-    /// alternates between base state and (idle?) state every frame. Especially noticeable
-    /// when the cup isn't moving on host either, since both sides should be at the SAME
-    /// idle state but client's animator clocks past it.
+    /// Why: the map player is still rendered via the pre-v1.2.0 puppet path — ScenePuppetry scrubs
+    /// its animator to the host's streamed state each frame. If the controller's own Update also ran,
+    /// it manually calls <c>animator.Update</c> several times per frame and clocks the state machine
+    /// past the scrubbed state, producing a 2-frame flicker. Skipping its Update lets the scrub own
+    /// the animator cleanly.
     ///
-    /// Solution: skip the animation controller's Update entirely when in client mode. Host's
-    /// snapshot stream provides the animator state via <see cref="ScenePuppetry.ApplyTo"/>;
-    /// we don't need the controller's update. Same pattern for LevelPlayerAnimationController
-    /// (used in run-and-gun + boss levels) and MapPlayerAnimationController (world map).
+    /// v1.2.0: the Level and Arcade player animation controllers are DELIBERATELY no longer blocked.
+    /// The client now runs them locally and drives their polled inputs + edge events from the streamed
+    /// flags/pulses (see <see cref="PlayerMotorBypass"/>), which renders shooting/hit/flash that
+    /// layer-0 scrubbing could not. Only the world map keeps the scrub-and-block approach.
     /// </summary>
     [HarmonyPatch]
     internal static class PlayerAnimControllerUpdateBlock
     {
         private static bool ShouldBlock() => CoopState.Mode == CoopMode.Client;
-
-        [HarmonyPatch(typeof(global::ArcadePlayerAnimationController), "Update")]
-        [HarmonyPrefix]
-        private static bool Arcade_Update_Prefix() => !ShouldBlock();
-
-        [HarmonyPatch(typeof(global::LevelPlayerAnimationController), "Update")]
-        [HarmonyPrefix]
-        private static bool Level_Update_Prefix() => !ShouldBlock();
 
         [HarmonyPatch(typeof(global::MapPlayerAnimationController), "Update")]
         [HarmonyPrefix]

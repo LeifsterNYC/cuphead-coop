@@ -22,3 +22,6 @@ goldberg_emulator/
 # editor
 .idea/
 .vscode/
+
+# local Claude session settings + worktrees
+.claude/

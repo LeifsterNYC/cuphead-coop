@@ -18,7 +18,7 @@ namespace CupheadCoop
     public class Plugin : BaseUnityPlugin
     {
         public const string GUID = "leif.cupheadcoop";
-        public const string Version = "1.1.0";
+        public const string Version = "1.2.0";
 
         private Harmony _harmony;
         private CoopHost _host;
@@ -53,6 +53,10 @@ namespace CupheadCoop
                 SnapshotInterpolation.Log = Logger;
                 PlayerDeathSync.Log = Logger;
                 TypeRegistry.Log = Logger;
+                AnimDiagnostics.Log = Logger;
+                HudFixup.Log = Logger;
+                AudioSync.Log = Logger;
+                LevelEventSync.Log = Logger;
                 EntitySync.Wire();
                 LogTap.Wire();
                 Application.runInBackground = true;
@@ -143,6 +147,9 @@ namespace CupheadCoop
             // Test harness: advance scripted-input state, drive one-shot level load / P2 kill.
             // All no-ops unless a [Debug] test flag is set.
             TestHarness.Tick(this);
+
+            // v1.2.0 anim-parity diagnostic (no-op unless [Debug] DumpAnimState is set).
+            AnimDiagnostics.Tick(Time.unscaledDeltaTime);
         }
 
         // CRITICAL: also pump the host network in FixedUpdate. Cuphead's ArcadePlayerMotor.HandleInput

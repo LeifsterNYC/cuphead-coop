@@ -160,9 +160,13 @@ namespace CupheadCoop.Net
                 case PacketType.StateSnapshot:
                 {
                     var s = StateSnapshot.Read(reader);
-                    CoopState.ApplyRemoteState(s.Sequence, s.P1, s.P2, s.IsPaused, s.SceneName, s.Entities, s.EntityCount);
+                    CoopState.ApplyRemoteState(s.Sequence, s.P1, s.P2, s.IsPaused, s.SceneName, s.Entities, s.EntityCount, s.LevelFlags);
                     CoopState.ApplyRemoteAliveHashes(s.AliveHashes, s.AliveHashCount);
                     CoopState.ApplyRemoteProjectiles(s.Projectiles, s.ProjectileCount);
+                    // v1.2.0 wave 2: queue this snapshot's streamed SFX for replay. Done here (not via
+                    // the interpolation buffer) so one-shots fire promptly and aren't tied to the
+                    // render-in-the-past cursor. AudioSync.Tick drains + replays on the main thread.
+                    AudioSync.EnqueueFromHost(s.SfxKinds, s.SfxKeys, s.SfxCount);
                     // v1.1.0: buffer this snapshot for client-side interpolation. The arrays inside
                     // it are freshly allocated by StateSnapshot.Read, so retaining them is safe.
                     SnapshotInterpolation.Push(ref s);
